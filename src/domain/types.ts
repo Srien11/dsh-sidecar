@@ -1,0 +1,47 @@
+export interface SidecarSessionSummary {
+  id: string
+  parentId?: string
+  seedLength?: number
+  origin?: string
+  createdAt: number
+  archived: boolean
+}
+
+export interface SidecarAnchor {
+  parentSessionId: string
+  turnEndSeq: number
+  seedLength: number
+}
+
+export interface SidecarAnchorRecord {
+  childSessionId: string
+  anchor: SidecarAnchor
+}
+
+export interface SidecarBranch {
+  child: SidecarSessionSummary
+  anchor: SidecarAnchor
+}
+
+export type BranchIndexDiagnosticKind =
+  | 'anchor-parent-mismatch'
+  | 'cycle'
+  | 'missing-child'
+  | 'missing-parent'
+  | 'seed-length-mismatch'
+  | 'subagent'
+
+export interface BranchIndexDiagnostic {
+  childId: string
+  kind: BranchIndexDiagnosticKind
+}
+
+export interface SidecarBranchIndex {
+  /** Active, non-archived branches grouped by the answer that seeded them. */
+  byAnchor: ReadonlyMap<string, readonly SidecarBranch[]>
+  /** Every valid sidecar, including archived children. */
+  byChildId: ReadonlyMap<string, SidecarBranch>
+  /** Valid sidecar ids retained for archive/recovery UI. */
+  knownChildIds: ReadonlySet<string>
+  diagnostics: readonly BranchIndexDiagnostic[]
+}
