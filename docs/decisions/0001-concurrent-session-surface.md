@@ -1,6 +1,6 @@
 # ADR 0001：并发 Session Surface 策略
 
-状态：待验证  
+状态：Accepted
 日期：2026-08-17
 
 ## 背景
@@ -52,7 +52,24 @@
 
 拒绝理由：重复实现 agent loop、工具策略、持久化和恢复，卸载后数据可读性差，也偏离“一切复用官方 fork”的初衷。
 
-## 暂定决定
+### 路线 A2：公共 Session API + 自定义 child 投影（已选择）
 
-先验证 A，再验证 B；若二者失败，评估 C 是否仍满足用户体验。D 不进入 MVP。任何路线都不得依赖未导出的内部模块、DOM 猜测或 monkey patch。
+使用 `sessions.fork` 创建普通 child Session；通过公开 `ctx.connection.api.sessions.history` 轮询任意 child，
+通过 `prompt` 和 `cancel` 驱动它。插件只折叠并展示消息、状态和错误，不实现自己的 LLM/agent loop，
+也不改变 `sessions.current`。
 
+优点：主 Session 始终保持 current 和可见；child 使用 Harness 原生日志与持久化；关闭 UI 只释放轮询。
+缺点：不是原生第二 Conversation surface；流式显示有轮询延迟，复杂工具卡在 Beta 中只能降级展示。
+
+## 决定
+
+选择路线 A2。真实 `0.1.0-rc.6` 验证表明非 current child 可以 fork、prompt、history 和 cancel，
+而 parent selection 与日志保持不变；但 published Client Runtime 明确只为 `list.current` stage 一个事件窗口，
+所以路线 A 的原生双 surface 不成立。
+
+路线 B 暂不采用：它会启动第二套完整页面运行时，成本和焦点管理明显高于 A2，而 A2 已满足“追问不污染主线”。
+路线 C 暂不采用：它需要切换 current，弱于已验证的 A2。路线 D 仍拒绝，因为 A2 复用官方 Session 和 agent loop，
+无需插件自建对话后端。
+
+Beta 能力边界：文本消息、运行/错误状态、发送、取消、关闭后保存与重新打开是承诺功能；原生工具卡等价呈现、
+零延迟 streaming 和强制只读工具策略不是 Beta 承诺。任何实现仍不得依赖未导出的内部模块、DOM 猜测或 monkey patch。
