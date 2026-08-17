@@ -15,7 +15,10 @@ function deferred<T>() {
   return { promise, reject, resolve }
 }
 
-function harness(open: (input: OpenSidecarInput) => Promise<string>) {
+function harness(
+  open: (input: OpenSidecarInput) => Promise<string>,
+  list = { byId: {}, ids: [] as string[] },
+) {
   const forks = { open: vi.fn(open) } as unknown as ForkController
   const gateway: SidecarSessionGateway = {
     cancel: vi.fn(),
@@ -31,7 +34,7 @@ function harness(open: (input: OpenSidecarInput) => Promise<string>) {
   }
   const sessions = {
     list: {
-      getSnapshot: () => ({ byId: {}, ids: [] }),
+      getSnapshot: () => list,
     },
   }
 
@@ -42,6 +45,7 @@ function harness(open: (input: OpenSidecarInput) => Promise<string>) {
       sessions as never,
       anchors,
     ),
+    anchors,
     forks,
     gateway,
   }
@@ -91,5 +95,18 @@ describe('SidecarController operation ordering', () => {
     await opening
 
     expect(test.controller.getSnapshot()).toEqual({ status: 'closed' })
+  })
+})
+
+describe('SidecarController branch identity', () => {
+  it('does not count an unrecorded ordinary Harness fork as a sidecar', async () => {
+    const test = harness(async () => 'child', {
+      byId: { ordinary: { parentId: 'parent' } },
+      ids: ['ordinary'],
+    })
+    vi.mocked(test.anchors.get).mockResolvedValue(undefined)
+
+    await expect(test.controller.branchCount('parent', 10)).resolves.toBe(0)
+    expect(test.anchors.get).toHaveBeenCalledWith('ordinary')
   })
 })

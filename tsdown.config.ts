@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown'
 
 const deps = {
-  neverBundle: [/^@deepseek-ai\//, /^react(?:-dom)?(?:\/.*)?$/],
+  neverBundle: [/^@deepseek-ai\//, /^react(?:-dom)?(?:\/.*)?$/, /^zod$/],
 }
 
 const common = {
