@@ -35,6 +35,7 @@ function uiAnchorKey(parentId: string, turnEndSeq: number): string {
 export class SidecarController implements SidecarUiController {
   private state: SidecarControllerState = { status: 'closed' }
   private readonly listeners = new Set<() => void>()
+  private operationEpoch = 0
 
   constructor(
     private readonly forks: ForkController,
@@ -56,6 +57,7 @@ export class SidecarController implements SidecarUiController {
   }
 
   async open(input: OpenSidecarUiInput): Promise<string> {
+    const epoch = ++this.operationEpoch
     const key = uiAnchorKey(input.parentId, input.turnEndSeq)
     this.setState({
       anchorKey: key,
@@ -71,32 +73,37 @@ export class SidecarController implements SidecarUiController {
         turnEndSeq: input.turnEndSeq,
         ...(children[0] === undefined ? {} : { existingChildId: children[0] }),
       })
-      this.setState({
-        anchorKey: key,
-        childId,
-        ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
-        parentId: input.parentId,
-        status: 'open',
-        turnEndSeq: input.turnEndSeq,
-      })
+      if (epoch === this.operationEpoch) {
+        this.setState({
+          anchorKey: key,
+          childId,
+          ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
+          parentId: input.parentId,
+          status: 'open',
+          turnEndSeq: input.turnEndSeq,
+        })
+      }
       return childId
     } catch (error) {
-      this.setState({
-        anchorKey: key,
-        error: error instanceof Error ? error.message : String(error),
-        ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
-        parentId: input.parentId,
-        status: 'error',
-        turnEndSeq: input.turnEndSeq,
-      })
+      if (epoch === this.operationEpoch) {
+        this.setState({
+          anchorKey: key,
+          error: error instanceof Error ? error.message : String(error),
+          ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
+          parentId: input.parentId,
+          status: 'error',
+          turnEndSeq: input.turnEndSeq,
+        })
+      }
       throw error
     }
   }
 
   async close(): Promise<void> {
+    const epoch = ++this.operationEpoch
     const childId = this.state.childId
     if (childId !== undefined) await this.gateway.closeChildSurface(childId)
-    this.setState({ status: 'closed' })
+    if (epoch === this.operationEpoch) this.setState({ status: 'closed' })
   }
 
   private async findChildren(parentId: string, turnEndSeq: number): Promise<string[]> {
