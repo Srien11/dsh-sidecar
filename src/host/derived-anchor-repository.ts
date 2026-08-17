@@ -58,21 +58,67 @@ function deriveCompletedPrefix(
  * required for future reconstruction.
  */
 export class DerivedAnchorRepository implements AnchorRepository {
+  private readonly anchors = new Map<string, Promise<SidecarAnchor | undefined>>()
+  private readonly histories = new Map<
+    string,
+    Promise<readonly SidecarHistoryEvent[]>
+  >()
+
   constructor(private readonly source: DerivedAnchorSource) {}
 
-  async get(childSessionId: string): Promise<SidecarAnchor | undefined> {
+  get(childSessionId: string): Promise<SidecarAnchor | undefined> {
+    const existing = this.anchors.get(childSessionId)
+    if (existing !== undefined) return existing
+
+    const operation = this.derive(childSessionId)
+    const tracked = operation.then(
+      (anchor) => {
+        if (anchor === undefined && this.anchors.get(childSessionId) === tracked) {
+          this.anchors.delete(childSessionId)
+        }
+        return anchor
+      },
+      (error: unknown) => {
+        if (this.anchors.get(childSessionId) === tracked) {
+          this.anchors.delete(childSessionId)
+        }
+        throw error
+      },
+    )
+    this.anchors.set(childSessionId, tracked)
+    return tracked
+  }
+
+  private async derive(childSessionId: string): Promise<SidecarAnchor | undefined> {
     const parentSessionId = await this.source.parentId(childSessionId)
     if (parentSessionId === undefined || parentSessionId === childSessionId) {
       return undefined
     }
 
     const [parentEvents, childEvents] = await Promise.all([
-      this.source.history(parentSessionId),
-      this.source.history(childSessionId),
+      this.history(parentSessionId),
+      this.history(childSessionId),
     ])
     const prefix = deriveCompletedPrefix(parentEvents, childEvents)
 
     return prefix === undefined ? undefined : { parentSessionId, ...prefix }
+  }
+
+  private history(sessionId: string): Promise<readonly SidecarHistoryEvent[]> {
+    const existing = this.histories.get(sessionId)
+    if (existing !== undefined) return existing
+
+    const operation = this.source.history(sessionId)
+    this.histories.set(sessionId, operation)
+    void operation.then(
+      () => {
+        if (this.histories.get(sessionId) === operation) this.histories.delete(sessionId)
+      },
+      () => {
+        if (this.histories.get(sessionId) === operation) this.histories.delete(sessionId)
+      },
+    )
+    return operation
   }
 
   async put(childSessionId: string, anchor: SidecarAnchor): Promise<void> {

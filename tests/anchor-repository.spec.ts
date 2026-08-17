@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { DerivedAnchorRepository } from '../src/host/derived-anchor-repository.js'
 import type { SidecarHistoryEvent } from '../src/host/derived-anchor-repository.js'
@@ -74,5 +74,43 @@ describe('DerivedAnchorRepository', () => {
     const restarted = new DerivedAnchorRepository(source)
 
     expect(await first.get('child')).toEqual(await restarted.get('child'))
+  })
+
+  it('caches one successfully derived immutable child anchor', async () => {
+    const history = async () => shared
+    const source = {
+      history: vi.fn(history),
+      parentId: vi.fn(async (id: string) => (id === 'child' ? 'parent' : undefined)),
+    }
+    const repository = new DerivedAnchorRepository(source)
+
+    await expect(repository.get('child')).resolves.toBeDefined()
+    await expect(repository.get('child')).resolves.toBeDefined()
+
+    expect(source.parentId).toHaveBeenCalledTimes(1)
+    expect(source.history).toHaveBeenCalledTimes(2)
+  })
+
+  it('shares an in-flight parent history read across child derivations', async () => {
+    let releaseParent!: () => void
+    const parentReady = new Promise<void>((resolve) => {
+      releaseParent = resolve
+    })
+    const source = {
+      history: vi.fn(async (id: string) => {
+        if (id === 'parent') await parentReady
+        return shared
+      }),
+      parentId: vi.fn(async () => 'parent'),
+    }
+    const repository = new DerivedAnchorRepository(source)
+
+    const first = repository.get('child-a')
+    const second = repository.get('child-b')
+    await vi.waitFor(() => expect(source.history).toHaveBeenCalledTimes(3))
+    releaseParent()
+    await Promise.all([first, second])
+
+    expect(source.history.mock.calls.filter(([id]) => id === 'parent')).toHaveLength(1)
   })
 })
