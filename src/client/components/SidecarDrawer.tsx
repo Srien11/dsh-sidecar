@@ -13,6 +13,7 @@ interface SidecarDrawerInjected {
   controller: SidecarUiController
   gateway: SidecarSessionGateway
   history: SidecarHistoryReader
+  openSession: (sessionId: string) => void
 }
 
 export type SidecarDrawerProps = PropsRuntime<'shell.overlay'> &
@@ -22,6 +23,7 @@ export function SidecarDrawer({
   controller,
   gateway,
   history,
+  openSession,
   useSessions,
 }: SidecarDrawerProps) {
   const state = useSyncExternalStore(
@@ -29,11 +31,13 @@ export function SidecarDrawer({
     controller.getSnapshot,
     controller.getSnapshot,
   )
-  const running = useSessions((snapshot) =>
+  const child = useSessions((snapshot) =>
     state.childId === undefined
-      ? false
-      : (snapshot.byId[state.childId as SessionId]?.running ?? false),
+      ? undefined
+      : snapshot.byId[state.childId as SessionId],
   )
+  const running = child?.running ?? false
+  const pendingInteraction = child?.pendingInteraction
 
   useEffect(() => {
     if (state.status === 'closed') return () => undefined
@@ -65,6 +69,22 @@ export function SidecarDrawer({
       ) : null}
       {state.status === 'open' &&
       state.childId !== undefined &&
+      pendingInteraction !== undefined ? (
+        <div className={styles.pending} role="status">
+          <p>{pendingInteractionText(pendingInteraction)}</p>
+          <button
+            onClick={() => {
+              void controller.close()
+              openSession(state.childId as string)
+            }}
+            type="button"
+          >
+            打开子会话处理
+          </button>
+        </div>
+      ) : null}
+      {state.status === 'open' &&
+      state.childId !== undefined &&
       state.turnEndSeq !== undefined ? (
         <ChildProjectionSurface
           afterSeq={state.turnEndSeq}
@@ -77,4 +97,10 @@ export function SidecarDrawer({
       ) : null}
     </aside>
   )
+}
+
+function pendingInteractionText(kind: 'approval' | 'plan-review' | 'question'): string {
+  if (kind === 'approval') return '侧边会话正在等待工具审批。'
+  if (kind === 'question') return '侧边会话正在等待你的回答。'
+  return '侧边会话正在等待计划确认。'
 }

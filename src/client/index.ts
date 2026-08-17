@@ -1,4 +1,7 @@
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type {
+  ConnectionHandle,
+  SessionId,
+} from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -49,7 +52,12 @@ export function apply(ctx: ClientContext): void {
     ctx.slots.register(
       {
         id: 'sidecar',
-        inject: () => ({ controller, gateway, history }),
+        inject: () => ({
+          controller,
+          gateway,
+          history,
+          openSession: (sessionId: string) => ctx.sessions.open(sessionId as SessionId),
+        }),
         name: 'shell.overlay',
         order: 20,
       },

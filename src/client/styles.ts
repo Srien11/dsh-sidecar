@@ -10,6 +10,7 @@ export const styles = {
   error: 'dsh-sidecar-error',
   excerpt: 'dsh-sidecar-excerpt',
   header: 'dsh-sidecar-header',
+  pending: 'dsh-sidecar-pending',
   role: 'dsh-sidecar-role',
   status: 'dsh-sidecar-status',
   surface: 'dsh-sidecar-surface',
@@ -27,6 +28,7 @@ export const STYLE_TEXT = `
 .dsh-sidecar-header{align-items:center;border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);display:flex;justify-content:space-between;min-height:3.5rem;padding:0 1rem}
 .dsh-sidecar-header div{display:flex;flex-direction:column;gap:.1rem}.dsh-sidecar-header small{opacity:.58}.dsh-sidecar-header button{background:transparent;border:0;color:inherit;cursor:pointer;font-size:1.5rem}
 .dsh-sidecar-status{margin:auto;max-width:26rem;padding:1rem;text-align:center}
+.dsh-sidecar-pending{align-items:center;background:color-mix(in srgb,#d97706 10%,transparent);display:flex;gap:.75rem;justify-content:space-between;padding:.65rem 1rem}.dsh-sidecar-pending p{margin:0}.dsh-sidecar-pending button{border:0;border-radius:.55rem;cursor:pointer;padding:.4rem .7rem;white-space:nowrap}
 .dsh-sidecar-surface{display:flex;flex:1;flex-direction:column;min-height:0}
 .dsh-sidecar-excerpt{background:color-mix(in srgb,currentColor 6%,transparent);border-left:3px solid currentColor;border-radius:.35rem;color:color-mix(in srgb,currentColor 72%,transparent);font-size:.82rem;line-height:1.5;margin:.75rem 1rem 0;max-height:7rem;overflow:auto;padding:.55rem .7rem;white-space:pre-wrap}
 .dsh-sidecar-context-note,.dsh-sidecar-empty{color:color-mix(in srgb,currentColor 62%,transparent);font-size:.78rem;line-height:1.45;margin:0;padding:.75rem 1rem}
