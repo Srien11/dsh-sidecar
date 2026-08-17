@@ -1,4 +1,11 @@
-import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 
 import type { SidecarHistoryReader } from '../controllers/harness-history-source.js'
 import type { SidecarSessionGateway } from '../controllers/session-gateway.js'
@@ -25,6 +32,7 @@ export function ChildProjectionSurface({
   const [error, setError] = useState<string>()
   const [messages, setMessages] = useState<readonly SidecarTranscriptMessage[]>([])
   const [sending, setSending] = useState(false)
+  const sendingRef = useRef(false)
 
   const refresh = useCallback(async () => {
     const events = await history.history(childSessionId)
@@ -46,11 +54,11 @@ export function ChildProjectionSurface({
     }
   }, [refresh])
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
+  const sendDraft = useCallback(async () => {
     const text = draft.trim()
-    if (text === '' || sending) return
+    if (text === '' || sendingRef.current) return
 
+    sendingRef.current = true
     setSending(true)
     setError(undefined)
     try {
@@ -60,8 +68,20 @@ export function ChildProjectionSurface({
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError))
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
+  }, [childSessionId, draft, gateway, refresh])
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    void sendDraft()
+  }
+
+  const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+    event.preventDefault()
+    void sendDraft()
   }
 
   return (
@@ -90,7 +110,8 @@ export function ChildProjectionSurface({
         <textarea
           aria-label="侧边追问"
           onChange={(event) => setDraft(event.currentTarget.value)}
-          placeholder="继续追问，不影响主对话…"
+          onKeyDown={onComposerKeyDown}
+          placeholder="继续追问…（Enter 发送，Shift+Enter 换行）"
           rows={3}
           value={draft}
         />
