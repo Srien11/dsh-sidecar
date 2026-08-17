@@ -26,7 +26,8 @@ DeepSeek Harness 当前 Web Client 的 session scope 只支持一个 staged 会�
 - [官方插件要求与曝光方式](docs/research/official-plugin-requirements.md)
 - [产品规格](docs/product-spec.md)
 - [并发 Session 技术决策](docs/decisions/0001-concurrent-session-surface.md)
-- [详细实施计划](docs/plans/2026-08-17-dsh-sidecar.md)
+- [详细实施计划（English）](docs/plans/2026-08-17-dsh-sidecar.md)
+- [详细实施计划（中文）](docs/plans/2026-08-17-dsh-sidecar.zh.md)
 
 ## 官方依据
 
@@ -38,4 +39,3 @@ DeepSeek Harness 当前 Web Client 的 session scope 只支持一个 staged 会�
 ## 许可证
 
 [MIT](LICENSE)
-

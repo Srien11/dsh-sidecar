@@ -10,6 +10,16 @@
 
 ---
 
+## Feasibility statement
+
+This project is feasible in layers, not yet proven as one indivisible package:
+
+- **Confirmed by official implementation:** completed-turn Session fork, inherited context, child persistence, unchanged parent event history, Web Client bundles/slots, and profile installation.
+- **Conditionally feasible:** a drawer shell, branch navigation, close/reopen state, and preserving the visible parent position.
+- **Not yet proven through public APIs:** two fully interactive native Session surfaces in one page, with simultaneous streaming, tool cards, cancellation, and reconnect.
+
+If native dual-Session rendering fails but the frozen-parent route succeeds, the MVP may ship with the parent visible and state-preserved but read-only while the sidecar is open. If the requirement is that both panes remain fully interactive at the same time, Gate A must pass route A or route B; otherwise the project is a No-Go rather than a private-API workaround.
+
 ## Product invariants
 
 Every implementation task must preserve these invariants:
@@ -875,4 +885,3 @@ git commit -m "docs: prepare dsh-sidecar beta release"
 - General-purpose Session graph.
 - File or Git worktree isolation.
 - Support for additional Harness RCs before each one passes the full packed-install matrix.
-
