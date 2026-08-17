@@ -4,8 +4,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ChildProjectionSurface } from '../src/client/components/ChildProjectionSurface.js'
 import type { SidecarHistoryReader } from '../src/client/controllers/harness-history-source.js'
 import type { SidecarSessionGateway } from '../src/client/controllers/session-gateway.js'
+import type { SidecarHistoryEvent } from '../src/host/derived-anchor-repository.js'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return { promise, resolve }
+}
 
 function harness(excerpt?: string) {
   const gateway: SidecarSessionGateway = {
@@ -88,5 +100,98 @@ describe('ChildProjectionSurface composer', () => {
     await waitFor(() =>
       expect(test.gateway.prompt).toHaveBeenCalledWith('child', '按钮发送'),
     )
+  })
+
+  it('does not overlap history polls while the previous read is pending', async () => {
+    vi.useFakeTimers()
+    const pending = deferred<readonly []>()
+    const history: SidecarHistoryReader = {
+      history: vi.fn().mockReturnValue(pending.promise),
+    }
+    const gateway = {
+      cancel: vi.fn(),
+      closeChildSurface: vi.fn(),
+      fork: vi.fn(),
+      openChildSurface: vi.fn(),
+      prompt: vi.fn(),
+    }
+
+    render(
+      <ChildProjectionSurface
+        afterSeq={10}
+        childSessionId="child"
+        gateway={gateway}
+        history={history}
+        running={false}
+      />,
+    )
+    await Promise.resolve()
+    expect(history.history).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(history.history).toHaveBeenCalledTimes(1)
+
+    pending.resolve([])
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(history.history).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(history.history).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not let an old child response replace the current child transcript', async () => {
+    const first = deferred<readonly SidecarHistoryEvent[]>()
+    const history: SidecarHistoryReader = {
+      history: vi.fn((sessionId) =>
+        sessionId === 'child-a'
+          ? first.promise
+          : Promise.resolve([
+              {
+                data: { content: [{ text: '来自 B', type: 'text' }] },
+                seq: 11,
+                type: 'user/message',
+              },
+            ]),
+      ),
+    }
+    const gateway = {
+      cancel: vi.fn(),
+      closeChildSurface: vi.fn(),
+      fork: vi.fn(),
+      openChildSurface: vi.fn(),
+      prompt: vi.fn(),
+    }
+    const view = render(
+      <ChildProjectionSurface
+        afterSeq={10}
+        childSessionId="child-a"
+        gateway={gateway}
+        history={history}
+        running={false}
+      />,
+    )
+
+    view.rerender(
+      <ChildProjectionSurface
+        afterSeq={10}
+        childSessionId="child-b"
+        gateway={gateway}
+        history={history}
+        running={false}
+      />,
+    )
+    await waitFor(() => expect(screen.getByText('来自 B')).toBeTruthy())
+
+    first.resolve([
+      {
+        data: { content: [{ text: '来自 A', type: 'text' }] },
+        seq: 11,
+        type: 'user/message',
+      },
+    ])
+    await Promise.resolve()
+
+    expect(screen.queryByText('来自 A')).toBeNull()
+    expect(screen.getByText('来自 B')).toBeTruthy()
   })
 })

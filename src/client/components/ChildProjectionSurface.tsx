@@ -13,6 +13,9 @@ import { buildTranscript } from '../controllers/transcript.js'
 import type { SidecarTranscriptMessage } from '../controllers/transcript.js'
 import { styles } from '../styles.js'
 
+const ACTIVE_POLL_MS = 850
+const IDLE_POLL_MS = 5_000
+
 export interface ChildProjectionSurfaceProps {
   afterSeq: number
   childSessionId: string
@@ -34,25 +37,73 @@ export function ChildProjectionSurface({
   const [error, setError] = useState<string>()
   const [messages, setMessages] = useState<readonly SidecarTranscriptMessage[]>([])
   const [sending, setSending] = useState(false)
+  const activeKey = `${childSessionId}:${afterSeq}`
+  const activeKeyRef = useRef(activeKey)
+  const historyRequestRef = useRef<{
+    key: string
+    promise: Promise<readonly SidecarTranscriptMessage[]>
+  }>()
+  const mountedRef = useRef(true)
+  const runningRef = useRef(running)
   const sendingRef = useRef(false)
+  activeKeyRef.current = activeKey
+  runningRef.current = running
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  const readTranscript = useCallback(() => {
+    const current = historyRequestRef.current
+    if (current?.key === activeKey) return current.promise
+
+    const promise = history
+      .history(childSessionId)
+      .then((events) => buildTranscript(events, afterSeq))
+    const request = { key: activeKey, promise }
+    historyRequestRef.current = request
+    void promise.then(
+      () => {
+        if (historyRequestRef.current === request) historyRequestRef.current = undefined
+      },
+      () => {
+        if (historyRequestRef.current === request) historyRequestRef.current = undefined
+      },
+    )
+    return promise
+  }, [activeKey, afterSeq, childSessionId, history])
 
   const refresh = useCallback(async () => {
-    const events = await history.history(childSessionId)
-    setMessages(buildTranscript(events, afterSeq))
-  }, [afterSeq, childSessionId, history])
+    const nextMessages = await readTranscript()
+    if (mountedRef.current && activeKeyRef.current === activeKey) {
+      setMessages(nextMessages)
+    }
+  }, [activeKey, readTranscript])
 
   useEffect(() => {
     let live = true
-    const poll = () => {
-      void refresh().catch((nextError) => {
+    let timer: number | undefined
+    const poll = async () => {
+      try {
+        await refresh()
+      } catch (nextError) {
         if (live) setError(nextError instanceof Error ? nextError.message : String(nextError))
-      })
+      } finally {
+        if (live) {
+          timer = window.setTimeout(
+            () => void poll(),
+            runningRef.current ? ACTIVE_POLL_MS : IDLE_POLL_MS,
+          )
+        }
+      }
     }
-    poll()
-    const timer = window.setInterval(poll, 850)
+    void poll()
     return () => {
       live = false
-      window.clearInterval(timer)
+      if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [refresh])
 
