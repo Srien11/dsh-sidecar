@@ -134,4 +134,31 @@ describe('buildTranscript', () => {
       },
     ])
   })
+
+  it('does not expose provider diagnostics from authentication failures', () => {
+    const events = [
+      event(16, 'turn/end', {
+        reason: {
+          error: {
+            code: 'AUTH',
+            message: 'Invalid API key sk-secret-value',
+          },
+          kind: 'error',
+        },
+        turn: 2,
+      }),
+    ]
+
+    const transcript = buildTranscript(events, 10)
+
+    expect(transcript).toEqual([
+      {
+        id: 'error-16',
+        role: 'error',
+        seq: 16,
+        text: 'API key 无效或未配置。',
+      },
+    ])
+    expect(transcript[0]?.text).not.toContain('sk-secret-value')
+  })
 })

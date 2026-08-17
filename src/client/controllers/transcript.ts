@@ -29,6 +29,19 @@ function messageText(data: Record<string, unknown>): string {
   return textContent(data.content) || textContent(object(data.message)?.content)
 }
 
+function failureText(
+  reason: Record<string, unknown>,
+  failure: Record<string, unknown> | undefined,
+): string {
+  const code = String(failure?.code ?? reason.code ?? '')
+  if (/AUTH|CREDENTIAL|API[_ -]?KEY/i.test(code)) {
+    return 'API key 无效或未配置。'
+  }
+  return typeof failure?.message === 'string'
+    ? failure.message
+    : '本次追问执行失败。'
+}
+
 /** Small, tolerant projection for the non-staged child history in ADR 0001 A2. */
 export function buildTranscript(
   events: readonly SidecarHistoryEvent[],
@@ -103,10 +116,7 @@ export function buildTranscript(
           id: `error-${event.seq}`,
           role: 'error',
           seq: event.seq,
-          text:
-            typeof failure?.message === 'string'
-              ? failure.message
-              : '本次追问执行失败。',
+          text: failureText(reason, failure),
         })
       }
     }
