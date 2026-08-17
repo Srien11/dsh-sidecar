@@ -3,7 +3,10 @@ import type {
   RpcError,
   SessionId,
 } from '@deepseek-ai/dsh-client-connection/client'
-import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client'
+import type {
+  ISessions,
+  SessionFace,
+} from '@deepseek-ai/dsh-client-runtime/client'
 
 export interface SidecarSessionGateway {
   fork(input: { sessionId: string; atSeq: number }): Promise<{ childId: string }>
@@ -47,19 +50,23 @@ export class HarnessSessionGateway implements SidecarSessionGateway {
   }
 
   async prompt(childId: string, text: string): Promise<void> {
-    const response = await this.api.sessions.prompt({
-      clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      content: [{ text, type: 'text' }],
-      mode: 'queue',
-      sessionId: childId as SessionId,
-    })
-    if (!response.result.ok) throw rpcError('Sending sidecar prompt', response.result.error)
+    const result = await this.sessionFace(childId).prompt(
+      [{ text, type: 'text' }],
+      'queue',
+    )
+    if (!result.ok) throw rpcError('Sending sidecar prompt', result.error)
   }
 
   async cancel(childId: string): Promise<void> {
-    const response = await this.api.sessions.cancel({
-      sessionId: childId as SessionId,
-    })
-    if (!response.result.ok) throw rpcError('Cancelling sidecar turn', response.result.error)
+    const result = await this.sessionFace(childId).cancel()
+    if (!result.ok) throw rpcError('Cancelling sidecar turn', result.error)
+  }
+
+  private sessionFace(childId: string): SessionFace {
+    const binding = this.sessions.binding(childId as SessionId)
+    if (binding === undefined) {
+      throw new Error(`Sidecar session is not addressable: ${childId}`)
+    }
+    return binding.session
   }
 }
