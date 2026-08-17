@@ -8,6 +8,7 @@ export const styles = {
   drawer: 'dsh-sidecar-drawer',
   empty: 'dsh-sidecar-empty',
   error: 'dsh-sidecar-error',
+  excerpt: 'dsh-sidecar-excerpt',
   header: 'dsh-sidecar-header',
   role: 'dsh-sidecar-role',
   status: 'dsh-sidecar-status',
@@ -27,6 +28,7 @@ export const STYLE_TEXT = `
 .dsh-sidecar-header div{display:flex;flex-direction:column;gap:.1rem}.dsh-sidecar-header small{opacity:.58}.dsh-sidecar-header button{background:transparent;border:0;color:inherit;cursor:pointer;font-size:1.5rem}
 .dsh-sidecar-status{margin:auto;max-width:26rem;padding:1rem;text-align:center}
 .dsh-sidecar-surface{display:flex;flex:1;flex-direction:column;min-height:0}
+.dsh-sidecar-excerpt{background:color-mix(in srgb,currentColor 6%,transparent);border-left:3px solid currentColor;border-radius:.35rem;color:color-mix(in srgb,currentColor 72%,transparent);font-size:.82rem;line-height:1.5;margin:.75rem 1rem 0;max-height:7rem;overflow:auto;padding:.55rem .7rem;white-space:pre-wrap}
 .dsh-sidecar-context-note,.dsh-sidecar-empty{color:color-mix(in srgb,currentColor 62%,transparent);font-size:.78rem;line-height:1.45;margin:0;padding:.75rem 1rem}
 .dsh-sidecar-transcript{display:flex;flex:1;flex-direction:column;gap:.75rem;min-height:0;overflow:auto;padding:.5rem 1rem 1rem}
 .dsh-sidecar-transcript article{border-radius:.85rem;line-height:1.55;max-width:92%;padding:.7rem .85rem}.dsh-sidecar-transcript article p{margin:.2rem 0 0;white-space:pre-wrap}

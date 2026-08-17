@@ -69,6 +69,7 @@ export function SidecarDrawer({
         <ChildProjectionSurface
           afterSeq={state.turnEndSeq}
           childSessionId={state.childId}
+          {...(state.excerpt === undefined ? {} : { excerpt: state.excerpt })}
           gateway={gateway}
           history={history}
           running={running}

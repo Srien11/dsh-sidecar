@@ -2,9 +2,10 @@ import type { MessageId } from '@deepseek-ai/dsh-client-connection/client'
 import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import type { SidecarUiController } from '../controllers/sidecar-controller.js'
+import { selectionTextWithin } from '../controllers/selection.js'
 import { styles } from '../styles.js'
 
 interface SidecarActionInjected {
@@ -56,6 +57,7 @@ export function SidecarAction({
     controller.getSnapshot,
   )
   const [count, setCount] = useState(0)
+  const pointerExcerpt = useRef<string>()
 
   useEffect(() => {
     let live = true
@@ -84,14 +86,20 @@ export function SidecarAction({
       aria-label={label}
       className={styles.action}
       disabled={busy}
-      onClick={() => {
+      onClick={(event) => {
+        const excerpt = pointerExcerpt.current ?? selectionTextWithin(event.currentTarget)
+        pointerExcerpt.current = undefined
         void controller
           .open({
+            ...(excerpt === undefined ? {} : { excerpt }),
             parentId: sessionId,
             seedLength: boundary.seedLength,
             turnEndSeq: boundary.turnEndSeq,
           })
           .catch(() => undefined)
+      }}
+      onPointerDown={(event) => {
+        pointerExcerpt.current = selectionTextWithin(event.currentTarget)
       }}
       title={busy ? '正在创建或恢复分支…' : '在侧边栏中追问，不改动主对话'}
       type="button"

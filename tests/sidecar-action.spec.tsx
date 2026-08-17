@@ -8,7 +8,10 @@ import type {
   SidecarUiController,
 } from '../src/client/controllers/sidecar-controller.js'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  window.getSelection()?.removeAllRanges()
+})
 
 function props(
   snapshot: unknown,
@@ -63,6 +66,36 @@ describe('SidecarAction', () => {
 
     expect(ui.open).toHaveBeenCalledTimes(1)
     expect(ui.open).toHaveBeenCalledWith({
+      parentId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+  })
+
+  it('passes a selection from this answer as the follow-up excerpt', () => {
+    const ui = controller()
+    const { container } = render(
+      <section data-turn-tail="2">
+        <p>
+          前文<span id="selected-excerpt">精确选中的片段</span>后文
+        </p>
+        <SidecarAction {...props(completedSnapshot, ui)} />
+      </section>,
+    )
+    const selected = container.querySelector('#selected-excerpt')
+    expect(selected).not.toBeNull()
+
+    const range = document.createRange()
+    range.selectNodeContents(selected as Element)
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+
+    const button = screen.getByRole('button', { name: '追问' })
+    fireEvent.pointerDown(button)
+    fireEvent.click(button)
+
+    expect(ui.open).toHaveBeenCalledWith({
+      excerpt: '精确选中的片段',
       parentId: 'parent',
       seedLength: 11,
       turnEndSeq: 10,

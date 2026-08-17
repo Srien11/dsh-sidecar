@@ -13,12 +13,17 @@ export interface SidecarControllerState {
   parentId?: string
   turnEndSeq?: number
   error?: string
+  excerpt?: string
+}
+
+export type OpenSidecarUiInput = Omit<OpenSidecarInput, 'existingChildId'> & {
+  excerpt?: string
 }
 
 export interface SidecarUiController {
   getSnapshot(): SidecarControllerState
   subscribe(listener: () => void): () => void
-  open(input: Omit<OpenSidecarInput, 'existingChildId'>): Promise<string>
+  open(input: OpenSidecarUiInput): Promise<string>
   close(): Promise<void>
   branchCount(parentId: string, turnEndSeq: number): Promise<number>
 }
@@ -50,19 +55,26 @@ export class SidecarController implements SidecarUiController {
     return matches.length
   }
 
-  async open(input: Omit<OpenSidecarInput, 'existingChildId'>): Promise<string> {
+  async open(input: OpenSidecarUiInput): Promise<string> {
     const key = uiAnchorKey(input.parentId, input.turnEndSeq)
-    this.setState({ anchorKey: key, status: 'opening' })
+    this.setState({
+      anchorKey: key,
+      ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
+      status: 'opening',
+    })
 
     try {
       const children = await this.findChildren(input.parentId, input.turnEndSeq)
       const childId = await this.forks.open({
-        ...input,
+        parentId: input.parentId,
+        seedLength: input.seedLength,
+        turnEndSeq: input.turnEndSeq,
         ...(children[0] === undefined ? {} : { existingChildId: children[0] }),
       })
       this.setState({
         anchorKey: key,
         childId,
+        ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
         parentId: input.parentId,
         status: 'open',
         turnEndSeq: input.turnEndSeq,
@@ -72,6 +84,7 @@ export class SidecarController implements SidecarUiController {
       this.setState({
         anchorKey: key,
         error: error instanceof Error ? error.message : String(error),
+        ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
         parentId: input.parentId,
         status: 'error',
         turnEndSeq: input.turnEndSeq,

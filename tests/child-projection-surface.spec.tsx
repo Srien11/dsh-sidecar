@@ -7,7 +7,7 @@ import type { SidecarSessionGateway } from '../src/client/controllers/session-ga
 
 afterEach(cleanup)
 
-function harness() {
+function harness(excerpt?: string) {
   const gateway: SidecarSessionGateway = {
     cancel: vi.fn(),
     closeChildSurface: vi.fn(),
@@ -23,6 +23,7 @@ function harness() {
     <ChildProjectionSurface
       afterSeq={10}
       childSessionId="child"
+      {...(excerpt === undefined ? {} : { excerpt })}
       gateway={gateway}
       history={history}
       running={false}
@@ -36,6 +37,15 @@ function harness() {
 }
 
 describe('ChildProjectionSurface composer', () => {
+  it('shows and quotes the selected excerpt in the initial draft', () => {
+    const test = harness('第一行\n第二行')
+
+    expect(screen.getByText(/第一行\s+第二行/)).toBeTruthy()
+    expect((test.textarea as HTMLTextAreaElement).value).toBe(
+      '针对以下选中片段：\n\n> 第一行\n> 第二行\n\n',
+    )
+  })
+
   it('sends the trimmed draft when Enter is pressed', async () => {
     const test = harness()
     fireEvent.change(test.textarea, { target: { value: '  为什么？  ' } })

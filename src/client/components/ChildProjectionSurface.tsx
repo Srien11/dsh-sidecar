@@ -16,6 +16,7 @@ import { styles } from '../styles.js'
 export interface ChildProjectionSurfaceProps {
   afterSeq: number
   childSessionId: string
+  excerpt?: string
   gateway: SidecarSessionGateway
   history: SidecarHistoryReader
   running: boolean
@@ -24,11 +25,12 @@ export interface ChildProjectionSurfaceProps {
 export function ChildProjectionSurface({
   afterSeq,
   childSessionId,
+  excerpt,
   gateway,
   history,
   running,
 }: ChildProjectionSurfaceProps) {
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(() => excerptDraft(excerpt))
   const [error, setError] = useState<string>()
   const [messages, setMessages] = useState<readonly SidecarTranscriptMessage[]>([])
   const [sending, setSending] = useState(false)
@@ -86,6 +88,9 @@ export function ChildProjectionSurface({
 
   return (
     <div className={styles.surface}>
+      {excerpt === undefined ? null : (
+        <blockquote className={styles.excerpt}>{excerpt}</blockquote>
+      )}
       <p className={styles.contextNote}>已继承所选回答之前的上下文；下面只显示分支新增内容。</p>
       <div aria-live="polite" className={styles.transcript}>
         {messages.length === 0 ? (
@@ -131,4 +136,14 @@ export function ChildProjectionSurface({
       </form>
     </div>
   )
+}
+
+export function excerptDraft(excerpt: string | undefined): string {
+  if (excerpt === undefined) return ''
+  const quoted = excerpt
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n')
+  return `针对以下选中片段：\n\n${quoted}\n\n`
 }
