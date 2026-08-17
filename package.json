@@ -1,0 +1,21 @@
+{
+  "name": "dsh-sidecar",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Persistent side conversations for DeepSeek Harness without leaving the main thread.",
+  "keywords": [
+    "dsh-plugin",
+    "dsh",
+    "deepseek-harness",
+    "conversation",
+    "sidecar",
+    "branching"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "packageManager": "pnpm@11.7.0"
+}
+
