@@ -11,6 +11,7 @@ export interface SidecarAnchor {
   parentSessionId: string
   turnEndSeq: number
   seedLength: number
+  hidden?: true | undefined
 }
 
 export interface SidecarAnchorRecord {

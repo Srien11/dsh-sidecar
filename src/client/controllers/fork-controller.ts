@@ -50,6 +50,7 @@ export class ForkController {
       await this.gateway.openChildSurface(childId)
 
       const anchor: SidecarAnchor = {
+        hidden: true,
         parentSessionId: input.parentId,
         seedLength: input.seedLength,
         turnEndSeq: input.turnEndSeq,

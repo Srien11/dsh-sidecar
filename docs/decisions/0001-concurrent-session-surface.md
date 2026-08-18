@@ -54,7 +54,7 @@
 
 ### 路线 A2：公共 Session API + 自定义 child 投影（已选择）
 
-使用 `sessions.fork` 创建普通 child Session；通过公开 `ctx.connection.api.sessions.history` 轮询任意 child，
+使用 `sessions.fork` 创建 child Session，并用 `workspaces.archiveSession` 将其从普通会话分组隐藏；通过公开 `ctx.connection.api.sessions.history` 轮询任意 child，
 通过 `prompt` 和 `cancel` 驱动它。插件只折叠并展示消息、状态和错误，不实现自己的 LLM/agent loop，
 也不改变 `sessions.current`。
 

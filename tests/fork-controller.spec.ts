@@ -70,6 +70,7 @@ describe('ForkController', () => {
 
     expect(order).toEqual(['addressable', 'recorded'])
     expect(test.anchors.put).toHaveBeenCalledWith('child', {
+      hidden: true,
       parentSessionId: 'parent',
       seedLength: 43,
       turnEndSeq: 42,

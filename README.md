@@ -2,13 +2,13 @@
 
 在不离开 DeepSeek Harness 主对话的情况下，从某条已完成回答打开一个可持续追问、自动保存、随时恢复的侧边对话。
 
-> 当前状态：`0.1.0-beta.0`，面向 `@deepseek-ai/dsh@0.1.0-rc.6`。核心运行路径曾通过真实安装与浏览器冒烟；本轮增量使用仓库现有依赖完成 72 项测试、类型检查、构建和 bundle 契约验证，未重新安装完整 Harness。Harness 仍处于预览期，后续 RC 可能带来破坏性变化。
+> 当前状态：`0.1.0-beta.0`，面向 `@deepseek-ai/dsh@0.1.0-rc.6`。核心运行路径曾通过真实安装与浏览器冒烟；本轮增量使用仓库现有依赖完成 81 项测试、类型检查、构建和 bundle 契约验证，未重新安装完整 Harness。Harness 仍处于预览期，后续 RC 可能带来破坏性变化。
 
 ## 已实现
 
 - 在已完成的 Assistant 回答旁显示“追问”按钮和已有分支数量。
 - 可先精确选中当前回答中的一段文字，再点击“追问”；引用会预填到输入框，child 仍继承该回答结束前的完整上下文。
-- 从该回答结束边界 fork 官方 Session，不切换当前主会话。
+- 打开侧栏时不创建 Session；首次发送时才从回答结束边界 fork，并立即从普通对话列表隐藏，不切换当前主会话。
 - 同一回答支持多个持久分支，可选择已有分支或显式新建分支。
 - 可重命名当前分支；归档前需要二次确认，归档后自动切换到剩余分支。
 - 在右侧抽屉显示 child 新增历史，继承内容不会重复显示。
@@ -18,7 +18,7 @@
 - 打开时聚焦侧栏输入框，关闭后把焦点还给原“追问”按钮。
 - 跟随 Harness 的中文/英文语言设置和明暗主题 token。
 - 通过官方 `storageDomain` 持久保存最小 `childId -> anchor` 记录；普通 Harness fork 不会被误认成 sidecar。
-- 已归档 sidecar 不参与按钮计数和默认恢复。
+- 系统隐藏的 sidecar 仍参与按钮计数和恢复；用户主动归档后才退出索引。
 - 插件卸载时清理 slot、轮询和样式节点。
 
 ## 安装
@@ -50,7 +50,7 @@ dsh plugin --profile web add dsh-sidecar
 
 ## 隔离边界
 
-本插件保证的是对话记录隔离：追问和回答只进入 child Session，不会自动写回、截断、重命名或归档 parent Session。
+本插件保证的是对话记录隔离：追问和回答只进入隐藏的 child Session，不出现在普通对话列表，也不会自动写回、截断、重命名或归档 parent Session。
 
 工具副作用不隔离。child 与 parent 仍可能使用相同工作区、文件系统和外部服务；如果 child 获准调用写入型工具，这些效果对主工作区同样可见。请使用 Harness 权限模式控制工具访问。
 
@@ -61,7 +61,7 @@ dsh plugin --profile web add dsh-sidecar
 - `sessions.fork` 创建持久 child；
 - `sessions.history` 投影 child 历史；
 - `SessionFace.prompt`、`cancel` 和 `rename` 驱动 child；
-- `workspaces.archiveSession` 归档 child；
+- `workspaces.archiveSession` 将 child 从普通会话分组中隐藏；
 - `storageDomain` 和插件 RPC 通道持久化、读取分支锚点；
 - `conversation.chat.assistant-actions` 注入回答操作；
 - `shell.overlay` 承载抽屉。
@@ -78,7 +78,7 @@ pnpm check:bundle
 pnpm pack --dry-run
 ```
 
-当前 72 项测试覆盖锚点存储/RPC、sidecar 身份与归档边界、fork 原子性、精确选区、多分支管理、焦点、双语词典、主题契约和 child transcript 投影。
+当前 81 项测试覆盖锚点存储/RPC、sidecar 身份与归档边界、fork 原子性、精确选区、多分支管理、焦点、双语词典、主题契约和 child transcript 投影。
 
 上述命令只复用现有 `node_modules`。完整 Harness 安装与浏览器冒烟属于发布前的独立验收，不作为日常本地回归步骤。
 

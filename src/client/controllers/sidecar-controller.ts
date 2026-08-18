@@ -82,6 +82,7 @@ export class SidecarController implements SidecarUiController {
     const prepared = this.preparedChildren.get(key)
     const childId = prepared ?? (await this.forks.open(anchor))
     this.preparedChildren.set(key, childId)
+    await this.hideChild(childId, anchor)
     await this.gateway.prompt(childId, text)
     this.preparedChildren.delete(key)
 
@@ -131,6 +132,7 @@ export class SidecarController implements SidecarUiController {
         turnEndSeq: input.turnEndSeq,
         existingChildId,
       })
+      await this.hideChild(childId, input)
       if (epoch === this.operationEpoch) {
         this.setState({
           anchorKey: key,
@@ -184,6 +186,7 @@ export class SidecarController implements SidecarUiController {
 
     try {
       const childId = await this.forks.open(current)
+      await this.hideChild(childId, current)
       if (epoch === this.operationEpoch) {
         this.setState({
           ...this.state,
@@ -223,6 +226,7 @@ export class SidecarController implements SidecarUiController {
     try {
       await this.workspaces.archiveSession(childId as SessionId)
       archived = true
+      await this.anchors.remove(childId)
       await this.gateway.closeChildSurface(childId)
       if (epoch !== this.operationEpoch) return
       if (nextChildId === undefined) {
@@ -267,6 +271,7 @@ export class SidecarController implements SidecarUiController {
 
     try {
       await this.forks.open({ ...current, existingChildId: childId })
+      await this.hideChild(childId, current)
       if (epoch === this.operationEpoch) {
         this.setState({ ...this.state, childId, status: 'open' })
       }
@@ -294,6 +299,25 @@ export class SidecarController implements SidecarUiController {
     return { parentId, seedLength, turnEndSeq }
   }
 
+  private async hideChild(
+    childId: string,
+    anchor: OpenSidecarInput,
+  ): Promise<void> {
+    await this.anchors.put(childId, {
+      hidden: true,
+      parentSessionId: anchor.parentId,
+      seedLength: anchor.seedLength,
+      turnEndSeq: anchor.turnEndSeq,
+    })
+    if (
+      !this.workspaces.list
+        .getSnapshot()
+        .archivedSessionIds.includes(childId as SessionId)
+    ) {
+      await this.workspaces.archiveSession(childId as SessionId)
+    }
+  }
+
   private async findChildren(parentId: string, turnEndSeq: number): Promise<string[]> {
     const list = this.sessions.list.getSnapshot()
     const archived = new Set(
@@ -302,7 +326,6 @@ export class SidecarController implements SidecarUiController {
     const candidates = list.ids.filter((id) => {
       const summary = list.byId[id]
       return (
-        !archived.has(id) &&
         summary?.parentId === parentId &&
         summary.origin !== 'subagent'
       )
@@ -314,12 +337,32 @@ export class SidecarController implements SidecarUiController {
       })),
     )
 
-    return anchors
-      .filter(
-        (entry) =>
-          entry.anchor?.parentSessionId === parentId &&
-          entry.anchor.turnEndSeq === turnEndSeq,
-      )
+    const matches = anchors.filter(
+      (entry) =>
+        entry.anchor?.parentSessionId === parentId &&
+        entry.anchor.turnEndSeq === turnEndSeq &&
+        (!archived.has(entry.childId) || entry.anchor.hidden === true),
+    )
+
+    await Promise.all(
+      matches.map(async (entry) => {
+        const anchor = entry.anchor
+        if (
+          anchor === undefined ||
+          archived.has(entry.childId) ||
+          anchor.hidden === true
+        ) {
+          return
+        }
+        await this.hideChild(entry.childId, {
+          parentId: anchor.parentSessionId,
+          seedLength: anchor.seedLength,
+          turnEndSeq: anchor.turnEndSeq,
+        })
+      }),
+    )
+
+    return matches
       .map((entry) => entry.childId)
       .sort((left, right) => {
         const age =

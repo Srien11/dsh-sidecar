@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 export const sidecarAnchorSchema = z
   .object({
+    hidden: z.literal(true).optional(),
     parentSessionId: z.string().min(1),
     seedLength: z.number().int().nonnegative(),
     turnEndSeq: z.number().int().nonnegative(),

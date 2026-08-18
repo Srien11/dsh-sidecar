@@ -11,6 +11,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isAnchor(value: unknown): value is SidecarAnchor {
   return (
     isRecord(value) &&
+    (value.hidden === undefined || value.hidden === true) &&
     typeof value.parentSessionId === 'string' &&
     Number.isInteger(value.seedLength) &&
     Number.isInteger(value.turnEndSeq) &&

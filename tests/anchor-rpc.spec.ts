@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createAnchorRpcHandler } from '../src/host/anchor-rpc.js'
 
 const anchor = {
+  hidden: true as const,
   parentSessionId: 'parent',
   seedLength: 11,
   turnEndSeq: 10,

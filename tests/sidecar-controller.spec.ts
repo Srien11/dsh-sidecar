@@ -161,6 +161,13 @@ describe('SidecarController branch identity', () => {
 
   it('creates one child on the first prompt and reuses it afterwards', async () => {
     const test = harness(async () => 'child')
+    const order: string[] = []
+    vi.mocked(test.workspaces.archiveSession).mockImplementation(async () => {
+      order.push('hidden')
+    })
+    vi.mocked(test.gateway.prompt).mockImplementation(async () => {
+      order.push('prompted')
+    })
     await test.controller.open(input('parent', 10))
 
     await test.controller.prompt('第一次追问')
@@ -170,6 +177,14 @@ describe('SidecarController branch identity', () => {
     expect(test.forks.open).toHaveBeenCalledWith(input('parent', 10))
     expect(test.gateway.prompt).toHaveBeenNthCalledWith(1, 'child', '第一次追问')
     expect(test.gateway.prompt).toHaveBeenNthCalledWith(2, 'child', '继续追问')
+    expect(test.anchors.put).toHaveBeenCalledWith('child', {
+      hidden: true,
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+    expect(test.workspaces.archiveSession).toHaveBeenCalledWith('child')
+    expect(order).toEqual(['hidden', 'prompted', 'prompted'])
     expect(test.controller.getSnapshot()).toMatchObject({
       branchIds: ['child'],
       childId: 'child',
@@ -193,6 +208,25 @@ describe('SidecarController branch identity', () => {
     expect(test.gateway.prompt).toHaveBeenNthCalledWith(2, 'child', '重试追问')
   })
 
+  it('does not prompt or refork when hiding the child must be retried', async () => {
+    const test = harness(async () => 'child')
+    vi.mocked(test.workspaces.archiveSession)
+      .mockRejectedValueOnce(new Error('archive unavailable'))
+      .mockResolvedValueOnce(undefined)
+    await test.controller.open(input('parent', 10))
+
+    await expect(test.controller.prompt('第一次追问')).rejects.toThrow(
+      'archive unavailable',
+    )
+    expect(test.gateway.prompt).not.toHaveBeenCalled()
+
+    await test.controller.prompt('重试追问')
+
+    expect(test.forks.open).toHaveBeenCalledTimes(1)
+    expect(test.workspaces.archiveSession).toHaveBeenCalledTimes(2)
+    expect(test.gateway.prompt).toHaveBeenCalledWith('child', '重试追问')
+  })
+
   it('does not count an unrecorded ordinary Harness fork as a sidecar', async () => {
     const test = harness(async () => 'child', {
       byId: { ordinary: { parentId: 'parent' } },
@@ -202,6 +236,28 @@ describe('SidecarController branch identity', () => {
 
     await expect(test.controller.branchCount('parent', 10)).resolves.toBe(0)
     expect(test.anchors.get).toHaveBeenCalledWith('ordinary')
+  })
+
+  it('migrates a visible legacy sidecar out of the ordinary session list', async () => {
+    const test = harness(async () => 'legacy', {
+      byId: { legacy: { parentId: 'parent', updatedAt: 10 } },
+      ids: ['legacy'],
+    })
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+
+    await expect(test.controller.branchCount('parent', 10)).resolves.toBe(1)
+
+    expect(test.anchors.put).toHaveBeenCalledWith('legacy', {
+      hidden: true,
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+    expect(test.workspaces.archiveSession).toHaveBeenCalledWith('legacy')
   })
 
   it('does not count an archived sidecar branch', async () => {
@@ -220,7 +276,32 @@ describe('SidecarController branch identity', () => {
     })
 
     await expect(test.controller.branchCount('parent', 10)).resolves.toBe(0)
-    expect(test.anchors.get).not.toHaveBeenCalled()
+    expect(test.anchors.get).toHaveBeenCalledWith('archived')
+  })
+
+  it('restores a sidecar branch hidden from the ordinary session list', async () => {
+    const test = harness(
+      async (request) => request.existingChildId ?? 'new-child',
+      {
+        byId: { hidden: { parentId: 'parent', updatedAt: 10 } },
+        ids: ['hidden'],
+      },
+      ['hidden'],
+    )
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      hidden: true,
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+
+    await expect(test.controller.open(input('parent', 10))).resolves.toBe(
+      'hidden',
+    )
+    expect(test.forks.open).toHaveBeenCalledWith({
+      ...input('parent', 10),
+      existingChildId: 'hidden',
+    })
   })
 
   it('creates a new branch on first prompt instead of restoring an archived sidecar', async () => {
@@ -330,6 +411,7 @@ describe('SidecarController branch identity', () => {
     await test.controller.archiveCurrentBranch()
 
     expect(test.workspaces.archiveSession).toHaveBeenCalledWith('recent')
+    expect(test.anchors.remove).toHaveBeenCalledWith('recent')
     expect(test.forks.open).toHaveBeenLastCalledWith({
       ...input('parent', 10),
       existingChildId: 'older',
