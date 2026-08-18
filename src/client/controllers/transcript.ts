@@ -65,7 +65,7 @@ export function buildTranscript(
     if (event.type === 'assistant/chunk') {
       const chunk = object(data.chunk)
       if (
-        (chunk?.type === 'text-delta' || chunk?.type === 'reasoning-delta') &&
+        chunk?.type === 'text-delta' &&
         typeof chunk.text === 'string'
       ) {
         const key = `${String(data.turn)}:${String(data.step)}`

@@ -66,6 +66,35 @@ describe('buildTranscript', () => {
     ])
   })
 
+  it('never projects reasoning deltas into the visible transcript', () => {
+    const events = [
+      event(12, 'assistant/chunk', {
+        chunk: {
+          index: 0,
+          text: 'We need answer in Chinese.',
+          type: 'reasoning-delta',
+        },
+        step: 1,
+        turn: 2,
+      }),
+      event(13, 'assistant/chunk', {
+        chunk: { index: 0, text: '最终回答', type: 'text-delta' },
+        step: 1,
+        turn: 2,
+      }),
+    ]
+
+    expect(buildTranscript(events, 10)).toEqual([
+      {
+        id: 'partial-2:1',
+        pending: true,
+        role: 'assistant',
+        seq: 13,
+        text: '最终回答',
+      },
+    ])
+  })
+
   it('replaces streamed text with the finalized assistant message', () => {
     const events = [
       event(12, 'assistant/chunk', {
