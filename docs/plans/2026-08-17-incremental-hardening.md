@@ -117,9 +117,9 @@
 **Steps:**
 1. 先核对当前 profile 暴露的官方 Host storage/service 契约。
 2. 写失败测试：普通 Harness fork 不能被当作 sidecar；归档 sidecar 不参与默认计数和恢复。
-3. 用官方持久存储记录最小 `childId -> anchor` 元数据；保留历史推导作为旧版本迁移入口。
-4. 运行安装、冷启动和完整测试。
-5. Commit: `修复：区分侧边分支与普通会话分支`。
+3. 用官方持久存储记录最小 `childId -> anchor` 元数据；因无法证明旧 fork 身份，不做历史猜测迁移。
+4. 分别验证身份隔离和归档过滤，每个边界独立提交。
+5. Commits: `修复：区分侧边分支与普通会话分支`、`修复：过滤已归档的侧边分支`。
 
 ### Task 9: 产品表层收尾
 
@@ -130,5 +130,5 @@
 **Steps:**
 1. 分别实现分支选择、重命名/归档、焦点恢复、中英文 locale、主题 token；每个能力单独测试并单独提交。
 2. README 区分“已实现”和“规划中”，与真实能力保持一致。
-3. 最终运行 typecheck、完整测试、build、bundle check、pack dry-run 和真实 Harness 浏览器冒烟。
-
+3. 最终运行 typecheck、完整测试、build、bundle check 和 pack dry-run；不安装新依赖、不启动完整 Harness。
+4. 完整 Harness 安装、刷新/重启和浏览器冒烟留作发布前在资源可控隔离环境中的独立验收。

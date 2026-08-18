@@ -2,17 +2,23 @@
 
 在不离开 DeepSeek Harness 主对话的情况下，从某条已完成回答打开一个可持续追问、自动保存、随时恢复的侧边对话。
 
-> 当前状态：`0.1.0-beta.0`，已完成可运行 MVP，并通过 `@deepseek-ai/dsh@0.1.0-rc.6` 的真实安装与浏览器冒烟测试。Harness 仍处于预览期，后续 RC 可能带来破坏性变化。
+> 当前状态：`0.1.0-beta.0`，面向 `@deepseek-ai/dsh@0.1.0-rc.6`。核心运行路径曾通过真实安装与浏览器冒烟；本轮增量使用仓库现有依赖完成 72 项测试、类型检查、构建和 bundle 契约验证，未重新安装完整 Harness。Harness 仍处于预览期，后续 RC 可能带来破坏性变化。
 
 ## 已实现
 
 - 在已完成的 Assistant 回答旁显示“追问”按钮和已有分支数量。
 - 可先精确选中当前回答中的一段文字，再点击“追问”；引用会预填到输入框，child 仍继承该回答结束前的完整上下文。
 - 从该回答结束边界 fork 官方 Session，不切换当前主会话。
+- 同一回答支持多个持久分支，可选择已有分支或显式新建分支。
+- 可重命名当前分支；归档前需要二次确认，归档后自动切换到剩余分支。
 - 在右侧抽屉显示 child 新增历史，继承内容不会重复显示。
 - 直接向 child 发送追问、查看流式回答、工具摘要和回合错误。
+- child 等待审批、回答或计划确认时给出提示，可显式打开原生子会话处理。
 - 关闭按钮或 `Escape` 只收起抽屉，不删除 child；再次点击可恢复原问答。
-- 冷启动后从 Harness 的 `parentId`、`seedLength` 和历史共同前缀重建锚点，无需插件私有数据库。
+- 打开时聚焦侧栏输入框，关闭后把焦点还给原“追问”按钮。
+- 跟随 Harness 的中文/英文语言设置和明暗主题 token。
+- 通过官方 `storageDomain` 持久保存最小 `childId -> anchor` 记录；普通 Harness fork 不会被误认成 sidecar。
+- 已归档 sidecar 不参与按钮计数和默认恢复。
 - 插件卸载时清理 slot、轮询和样式节点。
 
 ## 安装
@@ -39,7 +45,8 @@ dsh plugin --profile web add dsh-sidecar
 2. 如需针对具体片段，可先选中当前回答中的文字；不选则针对整条回答追问。
 3. 点击回答尾部的“追问”，选中片段会作为引用预填到侧栏输入框。
 4. 补充问题后按 `Enter` 发送，按 `Shift+Enter` 换行。主会话保持选中且不会被追加消息。
-5. 点击关闭按钮或按 `Escape` 收起，之后从同一回答再次打开。
+5. 可在侧栏顶部选择、新建、重命名或归档分支。
+6. 点击关闭按钮或按 `Escape` 收起，之后从同一回答再次打开。
 
 ## 隔离边界
 
@@ -53,7 +60,9 @@ dsh plugin --profile web add dsh-sidecar
 
 - `sessions.fork` 创建持久 child；
 - `sessions.history` 投影 child 历史；
-- `sessions.prompt` 和 `sessions.cancel` 驱动 child；
+- `SessionFace.prompt`、`cancel` 和 `rename` 驱动 child；
+- `workspaces.archiveSession` 归档 child；
+- `storageDomain` 和插件 RPC 通道持久化、读取分支锚点；
 - `conversation.chat.assistant-actions` 注入回答操作；
 - `shell.overlay` 承载抽屉。
 
@@ -69,7 +78,9 @@ pnpm check:bundle
 pnpm pack --dry-run
 ```
 
-当前测试覆盖分支索引、冷启动锚点恢复、fork 原子性、回答操作边界和 child transcript 投影。
+当前 72 项测试覆盖锚点存储/RPC、sidecar 身份与归档边界、fork 原子性、精确选区、多分支管理、焦点、双语词典、主题契约和 child transcript 投影。
+
+上述命令只复用现有 `node_modules`。完整 Harness 安装与浏览器冒烟属于发布前的独立验收，不作为日常本地回归步骤。
 
 ## 文档
 
