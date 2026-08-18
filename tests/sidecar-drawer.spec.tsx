@@ -25,6 +25,7 @@ function props(
     turnEndSeq: 10,
   }
   const controller: SidecarUiController = {
+    archiveCurrentBranch: vi.fn().mockResolvedValue(undefined),
     branchCount: vi.fn(),
     close: vi.fn(),
     createBranch: vi.fn().mockResolvedValue('child'),
@@ -119,5 +120,24 @@ describe('SidecarDrawer branch controls', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存名称' }))
 
     expect(rename).toHaveBeenCalledWith('child', '精确解释')
+  })
+
+  it('archives only after an explicit confirmation', () => {
+    const archiveCurrentBranch = vi.fn().mockResolvedValue(undefined)
+    render(
+      <SidecarDrawer
+        {...props('approval', vi.fn(), {
+          controller: { archiveCurrentBranch },
+        })}
+      />,
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '归档当前分支' }),
+    )
+    expect(archiveCurrentBranch).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '确认归档' }))
+    expect(archiveCurrentBranch).toHaveBeenCalledTimes(1)
   })
 })

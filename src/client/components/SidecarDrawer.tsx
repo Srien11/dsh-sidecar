@@ -43,11 +43,13 @@ export function SidecarDrawer({
       : sessions.byId[state.childId as SessionId]
   const running = child?.running ?? false
   const pendingInteraction = child?.pendingInteraction
+  const [confirmingArchive, setConfirmingArchive] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameTitle, setRenameTitle] = useState('')
   const [branchError, setBranchError] = useState<string>()
 
   useEffect(() => {
+    setConfirmingArchive(false)
     setRenaming(false)
     setBranchError(undefined)
   }, [state.childId])
@@ -112,6 +114,22 @@ export function SidecarDrawer({
                 取消
               </button>
             </form>
+          ) : confirmingArchive ? (
+            <div className={styles.branchEditor} role="group" aria-label="确认归档当前分支">
+              <span>归档此分支？</span>
+              <button
+                onClick={() => {
+                  setConfirmingArchive(false)
+                  void controller.archiveCurrentBranch().catch(() => undefined)
+                }}
+                type="button"
+              >
+                确认归档
+              </button>
+              <button onClick={() => setConfirmingArchive(false)} type="button">
+                取消归档
+              </button>
+            </div>
           ) : (
             <>
               <select
@@ -148,6 +166,13 @@ export function SidecarDrawer({
                 type="button"
               >
                 ＋ 新建
+              </button>
+              <button
+                aria-label="归档当前分支"
+                onClick={() => setConfirmingArchive(true)}
+                type="button"
+              >
+                归档
               </button>
             </>
           )}

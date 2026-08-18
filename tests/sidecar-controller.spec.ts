@@ -40,6 +40,7 @@ function harness(
     },
   }
   const workspaces = {
+    archiveSession: vi.fn().mockResolvedValue(undefined),
     list: {
       getSnapshot: () => ({ archivedSessionIds }),
     },
@@ -56,6 +57,7 @@ function harness(
     anchors,
     forks,
     gateway,
+    workspaces,
   }
 }
 
@@ -218,5 +220,55 @@ describe('SidecarController branch identity', () => {
       childId: 'new-child',
       status: 'open',
     })
+  })
+
+  it('archives the active branch and opens the next available branch', async () => {
+    const test = harness(
+      async (request) => request.existingChildId ?? 'new-child',
+      {
+        byId: {
+          older: { parentId: 'parent', updatedAt: 10 },
+          recent: { parentId: 'parent', updatedAt: 20 },
+        },
+        ids: ['older', 'recent'],
+      },
+    )
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+    await test.controller.open(input('parent', 10))
+
+    await test.controller.archiveCurrentBranch()
+
+    expect(test.workspaces.archiveSession).toHaveBeenCalledWith('recent')
+    expect(test.forks.open).toHaveBeenLastCalledWith({
+      ...input('parent', 10),
+      existingChildId: 'older',
+    })
+    expect(test.controller.getSnapshot()).toMatchObject({
+      branchIds: ['older'],
+      childId: 'older',
+      status: 'open',
+    })
+  })
+
+  it('closes after archiving the last branch', async () => {
+    const test = harness(async (request) => request.existingChildId ?? 'child', {
+      byId: { child: { parentId: 'parent', updatedAt: 10 } },
+      ids: ['child'],
+    })
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+    await test.controller.open(input('parent', 10))
+
+    await test.controller.archiveCurrentBranch()
+
+    expect(test.workspaces.archiveSession).toHaveBeenCalledWith('child')
+    expect(test.controller.getSnapshot()).toEqual({ status: 'closed' })
   })
 })

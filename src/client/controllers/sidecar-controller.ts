@@ -2,6 +2,7 @@ import type {
   ISessions,
   IWorkspaces,
 } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 
 import type { AnchorRepository } from '../../host/anchor-repository.js'
 import type { ForkController, OpenSidecarInput } from './fork-controller.js'
@@ -31,6 +32,7 @@ export interface SidecarUiController {
   open(input: OpenSidecarUiInput): Promise<string>
   close(): Promise<void>
   branchCount(parentId: string, turnEndSeq: number): Promise<number>
+  archiveCurrentBranch(): Promise<void>
   createBranch(): Promise<string>
   selectBranch(childId: string): Promise<void>
 }
@@ -139,6 +141,55 @@ export class SidecarController implements SidecarUiController {
       if (epoch === this.operationEpoch) {
         this.setState({
           ...this.state,
+          error: error instanceof Error ? error.message : String(error),
+          status: 'error',
+        })
+      }
+      throw error
+    }
+  }
+
+  async archiveCurrentBranch(): Promise<void> {
+    const current = this.activeAnchor()
+    const childId = this.state.childId
+    if (childId === undefined) throw new Error('No active sidecar branch')
+    const branchIds = (this.state.branchIds ?? []).filter(
+      (id) => id !== childId,
+    )
+    const nextChildId = branchIds[0]
+    const epoch = ++this.operationEpoch
+    let archived = false
+    this.setState({ ...this.state, status: 'opening' })
+
+    try {
+      await this.workspaces.archiveSession(childId as SessionId)
+      archived = true
+      await this.gateway.closeChildSurface(childId)
+      if (epoch !== this.operationEpoch) return
+      if (nextChildId === undefined) {
+        this.setState({ status: 'closed' })
+        return
+      }
+
+      await this.forks.open({ ...current, existingChildId: nextChildId })
+      if (epoch === this.operationEpoch) {
+        this.setState({
+          ...this.state,
+          branchIds,
+          childId: nextChildId,
+          status: 'open',
+        })
+      }
+    } catch (error) {
+      if (epoch === this.operationEpoch) {
+        this.setState({
+          ...this.state,
+          ...(archived && nextChildId !== undefined
+            ? {
+                branchIds,
+                childId: nextChildId,
+              }
+            : {}),
           error: error instanceof Error ? error.message : String(error),
           status: 'error',
         })

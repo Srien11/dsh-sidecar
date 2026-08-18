@@ -34,6 +34,7 @@ function props(
 function controller(state: Partial<SidecarControllerState> = {}): SidecarUiController {
   const snapshot: SidecarControllerState = { status: 'closed', ...state }
   return {
+    archiveCurrentBranch: vi.fn(),
     branchCount: vi.fn().mockResolvedValue(0),
     close: vi.fn(),
     createBranch: vi.fn().mockResolvedValue('child'),
