@@ -45,6 +45,7 @@ function controller(state: Partial<SidecarControllerState> = {}): SidecarUiContr
     getSnapshot: () => snapshot,
     rememberReturnFocus: vi.fn(),
     open: vi.fn().mockResolvedValue('child'),
+    prompt: vi.fn().mockResolvedValue(undefined),
     selectBranch: vi.fn().mockResolvedValue(undefined),
     subscribe: () => () => undefined,
   }

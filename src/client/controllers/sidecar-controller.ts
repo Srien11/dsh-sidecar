@@ -29,9 +29,10 @@ export type OpenSidecarUiInput = Omit<OpenSidecarInput, 'existingChildId'> & {
 export interface SidecarUiController {
   getSnapshot(): SidecarControllerState
   subscribe(listener: () => void): () => void
-  open(input: OpenSidecarUiInput): Promise<string>
+  open(input: OpenSidecarUiInput): Promise<string | undefined>
   close(): Promise<void>
   branchCount(parentId: string, turnEndSeq: number): Promise<number>
+  prompt(text: string): Promise<void>
   archiveCurrentBranch(): Promise<void>
   createBranch(): Promise<string>
   rememberReturnFocus(target: HTMLElement): void
@@ -45,6 +46,7 @@ function uiAnchorKey(parentId: string, turnEndSeq: number): string {
 export class SidecarController implements SidecarUiController {
   private state: SidecarControllerState = { status: 'closed' }
   private readonly listeners = new Set<() => void>()
+  private readonly preparedChildren = new Map<string, string>()
   private operationEpoch = 0
   private returnFocusTarget: HTMLElement | undefined
 
@@ -68,7 +70,35 @@ export class SidecarController implements SidecarUiController {
     return matches.length
   }
 
-  async open(input: OpenSidecarUiInput): Promise<string> {
+  async prompt(text: string): Promise<void> {
+    const currentChildId = this.state.childId
+    if (currentChildId !== undefined) {
+      await this.gateway.prompt(currentChildId, text)
+      return
+    }
+
+    const anchor = this.activeAnchor()
+    const key = uiAnchorKey(anchor.parentId, anchor.turnEndSeq)
+    const prepared = this.preparedChildren.get(key)
+    const childId = prepared ?? (await this.forks.open(anchor))
+    this.preparedChildren.set(key, childId)
+    await this.gateway.prompt(childId, text)
+    this.preparedChildren.delete(key)
+
+    if (this.state.status === 'open' && this.state.anchorKey === key) {
+      const { excerpt: _excerpt, ...state } = this.state
+      this.setState({
+        ...state,
+        branchIds: [
+          childId,
+          ...(state.branchIds ?? []).filter((id) => id !== childId),
+        ],
+        childId,
+      })
+    }
+  }
+
+  async open(input: OpenSidecarUiInput): Promise<string | undefined> {
     const epoch = ++this.operationEpoch
     const key = uiAnchorKey(input.parentId, input.turnEndSeq)
     this.setState({
@@ -79,16 +109,32 @@ export class SidecarController implements SidecarUiController {
 
     try {
       const children = await this.findChildren(input.parentId, input.turnEndSeq)
+      const existingChildId = children[0]
+      if (existingChildId === undefined) {
+        if (epoch === this.operationEpoch) {
+          this.setState({
+            anchorKey: key,
+            branchIds: [],
+            ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
+            parentId: input.parentId,
+            seedLength: input.seedLength,
+            status: 'open',
+            turnEndSeq: input.turnEndSeq,
+          })
+        }
+        return undefined
+      }
+
       const childId = await this.forks.open({
         parentId: input.parentId,
         seedLength: input.seedLength,
         turnEndSeq: input.turnEndSeq,
-        ...(children[0] === undefined ? {} : { existingChildId: children[0] }),
+        existingChildId,
       })
       if (epoch === this.operationEpoch) {
         this.setState({
           anchorKey: key,
-          branchIds: children.length === 0 ? [childId] : children,
+          branchIds: children,
           childId,
           ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
           parentId: input.parentId,

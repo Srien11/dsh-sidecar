@@ -15,16 +15,25 @@ function props(
     branchIds?: string[]
     childId?: string
     controller?: Partial<SidecarUiController>
+    deferred?: boolean
   } = {},
 ): SidecarDrawerProps {
-  const state = {
-    branchIds: overrides.branchIds ?? ['child'],
-    childId: overrides.childId ?? 'child',
-    parentId: 'parent',
-    seedLength: 11,
-    status: 'open' as const,
-    turnEndSeq: 10,
-  }
+  const state = overrides.deferred
+    ? {
+        branchIds: [],
+        parentId: 'parent',
+        seedLength: 11,
+        status: 'open' as const,
+        turnEndSeq: 10,
+      }
+    : {
+        branchIds: overrides.branchIds ?? ['child'],
+        childId: overrides.childId ?? 'child',
+        parentId: 'parent',
+        seedLength: 11,
+        status: 'open' as const,
+        turnEndSeq: 10,
+      }
   const controller: SidecarUiController = {
     archiveCurrentBranch: vi.fn().mockResolvedValue(undefined),
     branchCount: vi.fn(),
@@ -33,6 +42,7 @@ function props(
     getSnapshot: () => state,
     rememberReturnFocus: vi.fn(),
     open: vi.fn(),
+    prompt: vi.fn().mockResolvedValue(undefined),
     selectBranch: vi.fn().mockResolvedValue(undefined),
     subscribe: () => () => undefined,
     ...overrides.controller,
@@ -151,6 +161,18 @@ describe('SidecarDrawer branch controls', () => {
 })
 
 describe('SidecarDrawer focus', () => {
+  it('keeps the composer available before a child session exists', () => {
+    const drawerProps = props('approval', vi.fn(), { deferred: true })
+    render(<SidecarDrawer {...drawerProps} />)
+
+    const composer = screen.getByRole('textbox', { name: '侧边追问' })
+    fireEvent.change(composer, { target: { value: '第一次追问' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    expect(drawerProps.controller.prompt).toHaveBeenCalledWith('第一次追问')
+    expect(drawerProps.gateway.fork).not.toHaveBeenCalled()
+  })
+
   it('focuses the composer when the drawer opens', () => {
     render(<SidecarDrawer {...props('approval', vi.fn())} />)
 

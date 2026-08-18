@@ -19,10 +19,11 @@ const IDLE_POLL_MS = 5_000
 
 export interface ChildProjectionSurfaceProps {
   afterSeq: number
-  childSessionId: string
+  childSessionId?: string
   excerpt?: string
   gateway: SidecarSessionGateway
   history: SidecarHistoryReader
+  prompt?: (text: string) => Promise<void>
   running: boolean
   t: SidecarTranslate
 }
@@ -33,6 +34,7 @@ export function ChildProjectionSurface({
   excerpt,
   gateway,
   history,
+  prompt,
   running,
   t,
 }: ChildProjectionSurfaceProps) {
@@ -40,7 +42,7 @@ export function ChildProjectionSurface({
   const [error, setError] = useState<string>()
   const [messages, setMessages] = useState<readonly SidecarTranscriptMessage[]>([])
   const [sending, setSending] = useState(false)
-  const activeKey = `${childSessionId}:${afterSeq}`
+  const activeKey = `${childSessionId ?? 'pending'}:${afterSeq}`
   const activeKeyRef = useRef(activeKey)
   const historyRequestRef = useRef<{
     key: string
@@ -60,6 +62,7 @@ export function ChildProjectionSurface({
   }, [])
 
   const readTranscript = useCallback(() => {
+    if (childSessionId === undefined) return Promise.resolve([])
     const current = historyRequestRef.current
     if (current?.key === activeKey) return current.promise
 
@@ -87,6 +90,10 @@ export function ChildProjectionSurface({
   }, [activeKey, readTranscript])
 
   useEffect(() => {
+    if (childSessionId === undefined) {
+      setMessages([])
+      return () => undefined
+    }
     let live = true
     let timer: number | undefined
     const poll = async () => {
@@ -108,7 +115,7 @@ export function ChildProjectionSurface({
       live = false
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [refresh])
+  }, [childSessionId, refresh])
 
   const sendDraft = useCallback(async () => {
     const text = draft.trim()
@@ -118,7 +125,13 @@ export function ChildProjectionSurface({
     setSending(true)
     setError(undefined)
     try {
-      await gateway.prompt(childSessionId, text)
+      if (prompt !== undefined) {
+        await prompt(text)
+      } else if (childSessionId !== undefined) {
+        await gateway.prompt(childSessionId, text)
+      } else {
+        throw new Error('No sidecar prompt target')
+      }
       setDraft('')
       await refresh()
     } catch (nextError) {
@@ -127,7 +140,7 @@ export function ChildProjectionSurface({
       sendingRef.current = false
       setSending(false)
     }
-  }, [childSessionId, draft, gateway, refresh])
+  }, [childSessionId, draft, gateway, prompt, refresh])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -182,7 +195,7 @@ export function ChildProjectionSurface({
           value={draft}
         />
         <div className={styles.actions}>
-          {running ? (
+          {running && childSessionId !== undefined ? (
             <button
               onClick={() => void gateway.cancel(childSessionId).catch(() => undefined)}
               type="button"

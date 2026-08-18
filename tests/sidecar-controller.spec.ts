@@ -71,8 +71,21 @@ describe('SidecarController operation ordering', () => {
   it('does not let an older open completion replace the latest target', async () => {
     const first = deferred<string>()
     const second = deferred<string>()
-    const test = harness((request) =>
-      request.parentId === 'parent-a' ? first.promise : second.promise,
+    const test = harness(
+      (request) =>
+        request.parentId === 'parent-a' ? first.promise : second.promise,
+      {
+        byId: {
+          'child-a': { parentId: 'parent-a' },
+          'child-b': { parentId: 'parent-b' },
+        },
+        ids: ['child-a', 'child-b'],
+      },
+    )
+    vi.mocked(test.anchors.get).mockImplementation(async (childId) =>
+      childId === 'child-a'
+        ? { parentSessionId: 'parent-a', seedLength: 11, turnEndSeq: 10 }
+        : { parentSessionId: 'parent-b', seedLength: 21, turnEndSeq: 20 },
     )
 
     const openingA = test.controller.open(input('parent-a', 10))
@@ -95,7 +108,15 @@ describe('SidecarController operation ordering', () => {
 
   it('stays closed when an in-flight open completes after close', async () => {
     const pending = deferred<string>()
-    const test = harness(() => pending.promise)
+    const test = harness(() => pending.promise, {
+      byId: { child: { parentId: 'parent' } },
+      ids: ['child'],
+    })
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
 
     const opening = test.controller.open(input('parent', 10))
     await vi.waitFor(() => expect(test.forks.open).toHaveBeenCalledTimes(1))
@@ -123,6 +144,55 @@ describe('SidecarController operation ordering', () => {
 })
 
 describe('SidecarController branch identity', () => {
+  it('opens a new anchor locally without creating a child session', async () => {
+    const test = harness(async () => 'child')
+
+    await expect(test.controller.open(input('parent', 10))).resolves.toBeUndefined()
+
+    expect(test.forks.open).not.toHaveBeenCalled()
+    expect(test.controller.getSnapshot()).toMatchObject({
+      branchIds: [],
+      parentId: 'parent',
+      status: 'open',
+      turnEndSeq: 10,
+    })
+    expect(test.controller.getSnapshot().childId).toBeUndefined()
+  })
+
+  it('creates one child on the first prompt and reuses it afterwards', async () => {
+    const test = harness(async () => 'child')
+    await test.controller.open(input('parent', 10))
+
+    await test.controller.prompt('第一次追问')
+    await test.controller.prompt('继续追问')
+
+    expect(test.forks.open).toHaveBeenCalledTimes(1)
+    expect(test.forks.open).toHaveBeenCalledWith(input('parent', 10))
+    expect(test.gateway.prompt).toHaveBeenNthCalledWith(1, 'child', '第一次追问')
+    expect(test.gateway.prompt).toHaveBeenNthCalledWith(2, 'child', '继续追问')
+    expect(test.controller.getSnapshot()).toMatchObject({
+      branchIds: ['child'],
+      childId: 'child',
+      status: 'open',
+    })
+  })
+
+  it('reuses the prepared child when the first prompt must be retried', async () => {
+    const test = harness(async () => 'child')
+    vi.mocked(test.gateway.prompt)
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce(undefined)
+    await test.controller.open(input('parent', 10))
+
+    await expect(test.controller.prompt('第一次追问')).rejects.toThrow(
+      'temporary failure',
+    )
+    await test.controller.prompt('重试追问')
+
+    expect(test.forks.open).toHaveBeenCalledTimes(1)
+    expect(test.gateway.prompt).toHaveBeenNthCalledWith(2, 'child', '重试追问')
+  })
+
   it('does not count an unrecorded ordinary Harness fork as a sidecar', async () => {
     const test = harness(async () => 'child', {
       byId: { ordinary: { parentId: 'parent' } },
@@ -153,7 +223,7 @@ describe('SidecarController branch identity', () => {
     expect(test.anchors.get).not.toHaveBeenCalled()
   })
 
-  it('creates a new branch instead of restoring an archived sidecar', async () => {
+  it('creates a new branch on first prompt instead of restoring an archived sidecar', async () => {
     const test = harness(
       async () => 'new-child',
       {
@@ -168,10 +238,13 @@ describe('SidecarController branch identity', () => {
       turnEndSeq: 10,
     })
 
-    await expect(test.controller.open(input('parent', 10))).resolves.toBe(
-      'new-child',
-    )
+    await expect(test.controller.open(input('parent', 10))).resolves.toBeUndefined()
+    expect(test.forks.open).not.toHaveBeenCalled()
+
+    await test.controller.prompt('新的追问')
+
     expect(test.forks.open).toHaveBeenCalledWith(input('parent', 10))
+    expect(test.gateway.prompt).toHaveBeenCalledWith('new-child', '新的追问')
   })
 
   it('restores the most recent branch and can switch to another branch', async () => {

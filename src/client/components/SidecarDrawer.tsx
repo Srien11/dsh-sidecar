@@ -212,15 +212,17 @@ export function SidecarDrawer({
         </div>
       ) : null}
       {state.status === 'open' &&
-      state.childId !== undefined &&
       state.turnEndSeq !== undefined ? (
         <ChildProjectionSurface
           afterSeq={state.turnEndSeq}
-          childSessionId={state.childId}
+          {...(state.childId === undefined
+            ? {}
+            : { childSessionId: state.childId })}
           {...(state.excerpt === undefined ? {} : { excerpt: state.excerpt })}
           gateway={gateway}
           history={history}
-          key={state.childId}
+          key={state.childId ?? state.anchorKey}
+          prompt={(text) => controller.prompt(text)}
           running={running}
           t={t}
         />
