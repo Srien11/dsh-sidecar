@@ -27,6 +27,7 @@ function harness(
     fork: vi.fn(),
     openChildSurface: vi.fn(),
     prompt: vi.fn(),
+    rename: vi.fn(),
   }
   const anchors: AnchorRepository = {
     get: vi.fn(),

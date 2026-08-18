@@ -26,6 +26,7 @@ function harness(excerpt?: string) {
     fork: vi.fn(),
     openChildSurface: vi.fn(),
     prompt: vi.fn().mockResolvedValue(undefined),
+    rename: vi.fn(),
   }
   const history: SidecarHistoryReader = {
     history: vi.fn().mockResolvedValue([]),

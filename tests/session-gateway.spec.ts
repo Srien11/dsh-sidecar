@@ -11,6 +11,7 @@ function harness(result: { ok: boolean; error?: { code: string; message: string 
   const session = {
     cancel: vi.fn().mockResolvedValue(result),
     prompt: vi.fn().mockResolvedValue(result),
+    rename: vi.fn().mockResolvedValue(result),
   } as unknown as SessionFace
   const sessions = {
     binding: vi.fn().mockReturnValue({ session }),
@@ -54,6 +55,15 @@ describe('HarnessSessionGateway', () => {
     expect(test.api.sessions.cancel).not.toHaveBeenCalled()
   })
 
+  it('renames through the official SessionFace', async () => {
+    const test = harness()
+
+    await test.gateway.rename('child', 'Focused branch')
+
+    expect(test.sessions.binding).toHaveBeenCalledWith('child')
+    expect(test.session.rename).toHaveBeenCalledWith('Focused branch')
+  })
+
   it('reports SessionFace business failures', async () => {
     const test = harness({
       error: { code: 'busy', message: 'still running' },
@@ -65,6 +75,9 @@ describe('HarnessSessionGateway', () => {
     )
     await expect(test.gateway.cancel('child')).rejects.toThrow(
       'Cancelling sidecar turn failed: busy: still running',
+    )
+    await expect(test.gateway.rename('child', 'Title')).rejects.toThrow(
+      'Renaming sidecar failed: busy: still running',
     )
   })
 })

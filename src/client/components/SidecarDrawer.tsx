@@ -1,7 +1,12 @@
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { useEffect, useSyncExternalStore } from 'react'
+import {
+  type FormEvent,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 
 import type { SidecarHistoryReader } from '../controllers/harness-history-source.js'
 import type { SidecarSessionGateway } from '../controllers/session-gateway.js'
@@ -38,6 +43,27 @@ export function SidecarDrawer({
       : sessions.byId[state.childId as SessionId]
   const running = child?.running ?? false
   const pendingInteraction = child?.pendingInteraction
+  const [renaming, setRenaming] = useState(false)
+  const [renameTitle, setRenameTitle] = useState('')
+  const [branchError, setBranchError] = useState<string>()
+
+  useEffect(() => {
+    setRenaming(false)
+    setBranchError(undefined)
+  }, [state.childId])
+
+  const saveRename = async (event: FormEvent) => {
+    event.preventDefault()
+    const title = renameTitle.trim()
+    if (state.childId === undefined || title === '') return
+    setBranchError(undefined)
+    try {
+      await gateway.rename(state.childId, title)
+      setRenaming(false)
+    } catch (error) {
+      setBranchError(error instanceof Error ? error.message : String(error))
+    }
+  }
 
   useEffect(() => {
     if (state.status === 'closed') return () => undefined
@@ -71,29 +97,67 @@ export function SidecarDrawer({
       state.childId !== undefined &&
       state.branchIds !== undefined ? (
         <div className={styles.branches}>
-          <select
-            aria-label="侧边追问分支"
-            onChange={(event) => {
-              void controller.selectBranch(event.currentTarget.value).catch(() => undefined)
-            }}
-            value={state.childId}
-          >
-            {state.branchIds.map((branchId, index) => (
-              <option key={branchId} value={branchId}>
-                {sessions.byId[branchId as SessionId]?.displayTitle ??
-                  `分支 ${index + 1}`}
-              </option>
-            ))}
-          </select>
-          <button
-            aria-label="新建分支"
-            onClick={() => void controller.createBranch().catch(() => undefined)}
-            type="button"
-          >
-            ＋ 新建
-          </button>
+          {renaming ? (
+            <form className={styles.branchEditor} onSubmit={saveRename}>
+              <input
+                aria-label="分支名称"
+                autoFocus
+                onChange={(event) => setRenameTitle(event.currentTarget.value)}
+                value={renameTitle}
+              />
+              <button disabled={renameTitle.trim() === ''} type="submit">
+                保存名称
+              </button>
+              <button onClick={() => setRenaming(false)} type="button">
+                取消
+              </button>
+            </form>
+          ) : (
+            <>
+              <select
+                aria-label="侧边追问分支"
+                onChange={(event) => {
+                  void controller
+                    .selectBranch(event.currentTarget.value)
+                    .catch(() => undefined)
+                }}
+                value={state.childId}
+              >
+                {state.branchIds.map((branchId, index) => (
+                  <option key={branchId} value={branchId}>
+                    {sessions.byId[branchId as SessionId]?.displayTitle ??
+                      `分支 ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+              <button
+                aria-label="重命名当前分支"
+                onClick={() => {
+                  setRenameTitle(child?.displayTitle ?? '')
+                  setRenaming(true)
+                }}
+                type="button"
+              >
+                重命名
+              </button>
+              <button
+                aria-label="新建分支"
+                onClick={() =>
+                  void controller.createBranch().catch(() => undefined)
+                }
+                type="button"
+              >
+                ＋ 新建
+              </button>
+            </>
+          )}
         </div>
       ) : null}
+      {branchError === undefined ? null : (
+        <p className={styles.error} role="alert">
+          {branchError}
+        </p>
+      )}
       {state.status === 'open' &&
       state.childId !== undefined &&
       pendingInteraction !== undefined ? (

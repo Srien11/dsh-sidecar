@@ -14,6 +14,7 @@ export interface SidecarSessionGateway {
   closeChildSurface(childId: string): Promise<void>
   prompt(childId: string, text: string): Promise<void>
   cancel(childId: string): Promise<void>
+  rename(childId: string, title: string): Promise<void>
 }
 
 function rpcError(operation: string, error: RpcError): Error {
@@ -60,6 +61,11 @@ export class HarnessSessionGateway implements SidecarSessionGateway {
   async cancel(childId: string): Promise<void> {
     const result = await this.sessionFace(childId).cancel()
     if (!result.ok) throw rpcError('Cancelling sidecar turn', result.error)
+  }
+
+  async rename(childId: string, title: string): Promise<void> {
+    const result = await this.sessionFace(childId).rename(title)
+    if (!result.ok) throw rpcError('Renaming sidecar', result.error)
   }
 
   private sessionFace(childId: string): SessionFace {

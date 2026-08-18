@@ -43,13 +43,18 @@ function props(
       fork: vi.fn(),
       openChildSurface: vi.fn(),
       prompt: vi.fn(),
+      rename: vi.fn().mockResolvedValue(undefined),
     },
     history: { history: vi.fn().mockResolvedValue([]) },
     openSession,
     useSessions: (selector: (snapshot: unknown) => unknown) =>
       selector({
         byId: {
-          child: { pendingInteraction, running: true },
+          child: {
+            displayTitle: '当前分支',
+            pendingInteraction,
+            running: true,
+          },
           older: { displayTitle: '旧分支', running: false },
         },
       }),
@@ -98,5 +103,21 @@ describe('SidecarDrawer branch controls', () => {
 
     expect(selectBranch).toHaveBeenCalledWith('older')
     expect(createBranch).toHaveBeenCalledTimes(1)
+  })
+
+  it('renames the current branch with an explicit title', async () => {
+    const drawerProps = props('approval', vi.fn())
+    const rename = vi.mocked(drawerProps.gateway.rename)
+    render(<SidecarDrawer {...drawerProps} />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '重命名当前分支' }),
+    )
+    fireEvent.change(screen.getByRole('textbox', { name: '分支名称' }), {
+      target: { value: '精确解释' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存名称' }))
+
+    expect(rename).toHaveBeenCalledWith('child', '精确解释')
   })
 })

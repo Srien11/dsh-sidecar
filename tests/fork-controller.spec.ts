@@ -17,6 +17,7 @@ function harness() {
     ),
     openChildSurface: vi.fn().mockResolvedValue(undefined),
     prompt: vi.fn(),
+    rename: vi.fn(),
   }
   const anchors: AnchorRepository = {
     get: vi.fn(),
@@ -111,6 +112,7 @@ describe('ForkController', () => {
       fork: vi.fn().mockRejectedValue(new Error('connection reset')),
       openChildSurface: vi.fn(),
       prompt: vi.fn(),
+      rename: vi.fn(),
     }
     const anchors: AnchorRepository = {
       get: vi.fn(),
