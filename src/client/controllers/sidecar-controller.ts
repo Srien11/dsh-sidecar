@@ -1,4 +1,7 @@
-import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client'
+import type {
+  ISessions,
+  IWorkspaces,
+} from '@deepseek-ai/dsh-client-runtime/client'
 
 import type { AnchorRepository } from '../../host/anchor-repository.js'
 import type { ForkController, OpenSidecarInput } from './fork-controller.js'
@@ -41,6 +44,7 @@ export class SidecarController implements SidecarUiController {
     private readonly forks: ForkController,
     private readonly gateway: SidecarSessionGateway,
     private readonly sessions: ISessions,
+    private readonly workspaces: IWorkspaces,
     private readonly anchors: AnchorRepository,
   ) {}
 
@@ -108,9 +112,16 @@ export class SidecarController implements SidecarUiController {
 
   private async findChildren(parentId: string, turnEndSeq: number): Promise<string[]> {
     const list = this.sessions.list.getSnapshot()
+    const archived = new Set(
+      this.workspaces.list.getSnapshot().archivedSessionIds,
+    )
     const candidates = list.ids.filter((id) => {
       const summary = list.byId[id]
-      return summary?.parentId === parentId && summary.origin !== 'subagent'
+      return (
+        !archived.has(id) &&
+        summary?.parentId === parentId &&
+        summary.origin !== 'subagent'
+      )
     })
     const anchors = await Promise.all(
       candidates.map(async (childId) => ({

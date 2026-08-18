@@ -18,6 +18,7 @@ function deferred<T>() {
 function harness(
   open: (input: OpenSidecarInput) => Promise<string>,
   list = { byId: {}, ids: [] as string[] },
+  archivedSessionIds: string[] = [],
 ) {
   const forks = { open: vi.fn(open) } as unknown as ForkController
   const gateway: SidecarSessionGateway = {
@@ -37,12 +38,18 @@ function harness(
       getSnapshot: () => list,
     },
   }
+  const workspaces = {
+    list: {
+      getSnapshot: () => ({ archivedSessionIds }),
+    },
+  }
 
   return {
     controller: new SidecarController(
       forks,
       gateway,
       sessions as never,
+      workspaces as never,
       anchors,
     ),
     anchors,
@@ -108,5 +115,45 @@ describe('SidecarController branch identity', () => {
 
     await expect(test.controller.branchCount('parent', 10)).resolves.toBe(0)
     expect(test.anchors.get).toHaveBeenCalledWith('ordinary')
+  })
+
+  it('does not count an archived sidecar branch', async () => {
+    const test = harness(
+      async () => 'new-child',
+      {
+        byId: { archived: { parentId: 'parent' } },
+        ids: ['archived'],
+      },
+      ['archived'],
+    )
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+
+    await expect(test.controller.branchCount('parent', 10)).resolves.toBe(0)
+    expect(test.anchors.get).not.toHaveBeenCalled()
+  })
+
+  it('creates a new branch instead of restoring an archived sidecar', async () => {
+    const test = harness(
+      async () => 'new-child',
+      {
+        byId: { archived: { parentId: 'parent' } },
+        ids: ['archived'],
+      },
+      ['archived'],
+    )
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+
+    await expect(test.controller.open(input('parent', 10))).resolves.toBe(
+      'new-child',
+    )
+    expect(test.forks.open).toHaveBeenCalledWith(input('parent', 10))
   })
 })

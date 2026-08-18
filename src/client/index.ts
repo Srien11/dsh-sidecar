@@ -15,7 +15,7 @@ import { HarnessSessionGateway } from './controllers/session-gateway.js'
 import { SidecarController } from './controllers/sidecar-controller.js'
 import { STYLE_TEXT } from './styles.js'
 
-export const inject = ['slots', 'sessions', 'connection']
+export const inject = ['slots', 'sessions', 'workspaces', 'connection']
 
 /** Browser half assembled only from exported Harness 0.1.0-rc.6 contracts. */
 export function apply(ctx: ClientContext): void {
@@ -26,7 +26,13 @@ export function apply(ctx: ClientContext): void {
   const anchors = new PersistentAnchorRepository(connection.rpc)
   const gateway = new HarnessSessionGateway(ctx.sessions, connection.api)
   const forks = new ForkController(gateway, anchors)
-  const controller = new SidecarController(forks, gateway, ctx.sessions, anchors)
+  const controller = new SidecarController(
+    forks,
+    gateway,
+    ctx.sessions,
+    ctx.workspaces,
+    anchors,
+  )
 
   ctx.effect(() => {
     const element = document.createElement('style')

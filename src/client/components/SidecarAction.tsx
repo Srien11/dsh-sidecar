@@ -48,9 +48,13 @@ export function SidecarAction({
   sessionId,
   useSession,
   useSessions,
+  useWorkspaces,
 }: SidecarActionProps) {
   const boundary = useSession((snapshot) => answerBoundary(snapshot, messageId))
   const sessionVersion = useSessions((snapshot) => snapshot.ids.join('\u001f'))
+  const archiveVersion = useWorkspaces((snapshot) =>
+    snapshot.archivedSessionIds.join('\u001f'),
+  )
   const state = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
@@ -72,7 +76,7 @@ export function SidecarAction({
     return () => {
       live = false
     }
-  }, [boundary?.turnEndSeq, controller, sessionId, sessionVersion])
+  }, [archiveVersion, boundary?.turnEndSeq, controller, sessionId, sessionVersion])
 
   if (boundary === undefined) return null
 

@@ -17,6 +17,7 @@ function props(
   snapshot: unknown,
   controller: SidecarUiController,
   messageId = 'answer-1',
+  archivedSessionIds: string[] = [],
 ): SidecarActionProps {
   return {
     controller,
@@ -25,6 +26,8 @@ function props(
     useSession: (selector: (value: unknown) => unknown) => selector(snapshot),
     useSessions: (selector: (value: unknown) => unknown) =>
       selector({ ids: ['parent'], byId: {}, current: 'parent' }),
+    useWorkspaces: (selector: (value: unknown) => unknown) =>
+      selector({ archivedSessionIds }),
   } as unknown as SidecarActionProps
 }
 
@@ -108,6 +111,26 @@ describe('SidecarAction', () => {
     render(<SidecarAction {...props(completedSnapshot, ui)} />)
 
     await waitFor(() => expect(screen.getByRole('button').textContent).toContain('2'))
+  })
+
+  it('refreshes the branch count when archived sessions change', async () => {
+    const ui = controller()
+    vi.mocked(ui.branchCount)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(1)
+    const { rerender } = render(
+      <SidecarAction {...props(completedSnapshot, ui)} />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button').textContent).toContain('2'))
+    rerender(
+      <SidecarAction
+        {...props(completedSnapshot, ui, 'answer-1', ['archived-child'])}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button').textContent).toContain('1'))
+    expect(ui.branchCount).toHaveBeenCalledTimes(2)
   })
 
   it('exposes localized disabled state while the same anchor is opening', () => {
