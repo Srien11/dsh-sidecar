@@ -31,11 +31,11 @@ export function SidecarDrawer({
     controller.getSnapshot,
     controller.getSnapshot,
   )
-  const child = useSessions((snapshot) =>
+  const sessions = useSessions((snapshot) => snapshot)
+  const child =
     state.childId === undefined
       ? undefined
-      : snapshot.byId[state.childId as SessionId],
-  )
+      : sessions.byId[state.childId as SessionId]
   const running = child?.running ?? false
   const pendingInteraction = child?.pendingInteraction
 
@@ -69,6 +69,33 @@ export function SidecarDrawer({
       ) : null}
       {state.status === 'open' &&
       state.childId !== undefined &&
+      state.branchIds !== undefined ? (
+        <div className={styles.branches}>
+          <select
+            aria-label="侧边追问分支"
+            onChange={(event) => {
+              void controller.selectBranch(event.currentTarget.value).catch(() => undefined)
+            }}
+            value={state.childId}
+          >
+            {state.branchIds.map((branchId, index) => (
+              <option key={branchId} value={branchId}>
+                {sessions.byId[branchId as SessionId]?.displayTitle ??
+                  `分支 ${index + 1}`}
+              </option>
+            ))}
+          </select>
+          <button
+            aria-label="新建分支"
+            onClick={() => void controller.createBranch().catch(() => undefined)}
+            type="button"
+          >
+            ＋ 新建
+          </button>
+        </div>
+      ) : null}
+      {state.status === 'open' &&
+      state.childId !== undefined &&
       pendingInteraction !== undefined ? (
         <div className={styles.pending} role="status">
           <p>{pendingInteractionText(pendingInteraction)}</p>
@@ -92,6 +119,7 @@ export function SidecarDrawer({
           {...(state.excerpt === undefined ? {} : { excerpt: state.excerpt })}
           gateway={gateway}
           history={history}
+          key={state.childId}
           running={running}
         />
       ) : null}

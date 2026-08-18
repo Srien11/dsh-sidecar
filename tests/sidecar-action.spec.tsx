@@ -36,8 +36,10 @@ function controller(state: Partial<SidecarControllerState> = {}): SidecarUiContr
   return {
     branchCount: vi.fn().mockResolvedValue(0),
     close: vi.fn(),
+    createBranch: vi.fn().mockResolvedValue('child'),
     getSnapshot: () => snapshot,
     open: vi.fn().mockResolvedValue('child'),
+    selectBranch: vi.fn().mockResolvedValue(undefined),
     subscribe: () => () => undefined,
   }
 }

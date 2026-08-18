@@ -156,4 +156,66 @@ describe('SidecarController branch identity', () => {
     )
     expect(test.forks.open).toHaveBeenCalledWith(input('parent', 10))
   })
+
+  it('restores the most recent branch and can switch to another branch', async () => {
+    const test = harness(
+      async (request) => request.existingChildId ?? 'new-child',
+      {
+        byId: {
+          older: { parentId: 'parent', updatedAt: 10 },
+          recent: { parentId: 'parent', updatedAt: 20 },
+        },
+        ids: ['older', 'recent'],
+      },
+    )
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+
+    await expect(test.controller.open(input('parent', 10))).resolves.toBe(
+      'recent',
+    )
+    expect(test.controller.getSnapshot()).toMatchObject({
+      branchIds: ['recent', 'older'],
+      childId: 'recent',
+    })
+
+    await expect(test.controller.selectBranch('older')).resolves.toBeUndefined()
+    expect(test.forks.open).toHaveBeenLastCalledWith({
+      ...input('parent', 10),
+      existingChildId: 'older',
+    })
+    expect(test.controller.getSnapshot()).toMatchObject({
+      branchIds: ['recent', 'older'],
+      childId: 'older',
+      status: 'open',
+    })
+  })
+
+  it('creates an additional branch only after an explicit action', async () => {
+    const test = harness(
+      async (request) => request.existingChildId ?? 'new-child',
+      {
+        byId: { existing: { parentId: 'parent', updatedAt: 10 } },
+        ids: ['existing'],
+      },
+    )
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+    await test.controller.open(input('parent', 10))
+
+    await expect(test.controller.createBranch()).resolves.toBe('new-child')
+
+    expect(test.forks.open).toHaveBeenLastCalledWith(input('parent', 10))
+    expect(test.controller.getSnapshot()).toMatchObject({
+      branchIds: ['new-child', 'existing'],
+      childId: 'new-child',
+      status: 'open',
+    })
+  })
 })
