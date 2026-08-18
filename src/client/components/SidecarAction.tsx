@@ -91,6 +91,7 @@ export function SidecarAction({
       className={styles.action}
       disabled={busy}
       onClick={(event) => {
+        controller.rememberReturnFocus(event.currentTarget)
         const excerpt = pointerExcerpt.current ?? selectionTextWithin(event.currentTarget)
         pointerExcerpt.current = undefined
         void controller

@@ -106,6 +106,20 @@ describe('SidecarController operation ordering', () => {
 
     expect(test.controller.getSnapshot()).toEqual({ status: 'closed' })
   })
+
+  it('restores focus to the remembered trigger after close', async () => {
+    const test = harness(async () => 'child')
+    const focus = vi.fn()
+    test.controller.rememberReturnFocus({
+      focus,
+      isConnected: true,
+    } as unknown as HTMLElement)
+
+    await test.controller.close()
+    await Promise.resolve()
+
+    expect(focus).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('SidecarController branch identity', () => {

@@ -39,6 +39,7 @@ function controller(state: Partial<SidecarControllerState> = {}): SidecarUiContr
     close: vi.fn(),
     createBranch: vi.fn().mockResolvedValue('child'),
     getSnapshot: () => snapshot,
+    rememberReturnFocus: vi.fn(),
     open: vi.fn().mockResolvedValue('child'),
     selectBranch: vi.fn().mockResolvedValue(undefined),
     subscribe: () => () => undefined,
@@ -68,8 +69,10 @@ describe('SidecarAction', () => {
     const ui = controller()
     render(<SidecarAction {...props(completedSnapshot, ui)} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '追问' }))
+    const button = screen.getByRole('button', { name: '追问' })
+    fireEvent.click(button)
 
+    expect(ui.rememberReturnFocus).toHaveBeenCalledWith(button)
     expect(ui.open).toHaveBeenCalledTimes(1)
     expect(ui.open).toHaveBeenCalledWith({
       parentId: 'parent',

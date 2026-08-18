@@ -30,6 +30,7 @@ function props(
     close: vi.fn(),
     createBranch: vi.fn().mockResolvedValue('child'),
     getSnapshot: () => state,
+    rememberReturnFocus: vi.fn(),
     open: vi.fn(),
     selectBranch: vi.fn().mockResolvedValue(undefined),
     subscribe: () => () => undefined,
@@ -139,5 +140,15 @@ describe('SidecarDrawer branch controls', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '确认归档' }))
     expect(archiveCurrentBranch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('SidecarDrawer focus', () => {
+  it('focuses the composer when the drawer opens', () => {
+    render(<SidecarDrawer {...props('approval', vi.fn())} />)
+
+    expect(document.activeElement).toBe(
+      screen.getByRole('textbox', { name: '侧边追问' }),
+    )
   })
 })

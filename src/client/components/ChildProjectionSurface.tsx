@@ -165,6 +165,7 @@ export function ChildProjectionSurface({
       <form className={styles.composer} onSubmit={submit}>
         <textarea
           aria-label="侧边追问"
+          autoFocus
           onChange={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={onComposerKeyDown}
           placeholder="继续追问…（Enter 发送，Shift+Enter 换行）"

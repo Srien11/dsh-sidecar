@@ -34,6 +34,7 @@ export interface SidecarUiController {
   branchCount(parentId: string, turnEndSeq: number): Promise<number>
   archiveCurrentBranch(): Promise<void>
   createBranch(): Promise<string>
+  rememberReturnFocus(target: HTMLElement): void
   selectBranch(childId: string): Promise<void>
 }
 
@@ -45,6 +46,7 @@ export class SidecarController implements SidecarUiController {
   private state: SidecarControllerState = { status: 'closed' }
   private readonly listeners = new Set<() => void>()
   private operationEpoch = 0
+  private returnFocusTarget: HTMLElement | undefined
 
   constructor(
     private readonly forks: ForkController,
@@ -111,11 +113,22 @@ export class SidecarController implements SidecarUiController {
     }
   }
 
+  rememberReturnFocus(target: HTMLElement): void {
+    this.returnFocusTarget = target
+  }
+
   async close(): Promise<void> {
     const epoch = ++this.operationEpoch
     const childId = this.state.childId
     if (childId !== undefined) await this.gateway.closeChildSurface(childId)
-    if (epoch === this.operationEpoch) this.setState({ status: 'closed' })
+    if (epoch === this.operationEpoch) {
+      this.setState({ status: 'closed' })
+      const target = this.returnFocusTarget
+      this.returnFocusTarget = undefined
+      queueMicrotask(() => {
+        if (target?.isConnected) target.focus()
+      })
+    }
   }
 
   async createBranch(): Promise<string> {
