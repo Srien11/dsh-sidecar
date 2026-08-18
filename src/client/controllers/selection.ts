@@ -1,6 +1,6 @@
 /**
- * Read a browser selection only when both ends belong to the completed turn
- * that owns the clicked assistant action.
+ * Read a browser selection only when both ends belong to the Assistant row
+ * immediately owned by the clicked turn-tail action.
  */
 export function selectionTextWithin(
   action: Element,
@@ -8,7 +8,7 @@ export function selectionTextWithin(
 ): string | undefined {
   if (
     selection === null ||
-    selection.rangeCount === 0 ||
+    selection.rangeCount !== 1 ||
     selection.isCollapsed ||
     selection.anchorNode === null ||
     selection.focusNode === null
@@ -16,15 +16,25 @@ export function selectionTextWithin(
     return undefined
   }
 
-  const turn = action.closest('[data-turn-tail]')
+  const tail = action.closest('[data-chat-flow-kind="turn-tail"]')
+  let answer = tail?.previousElementSibling ?? null
+  while (
+    answer !== null &&
+    answer.getAttribute('data-chat-flow-kind') !== 'assistant-step'
+  ) {
+    if (answer.getAttribute('data-chat-flow-kind') === 'turn-tail') {
+      return undefined
+    }
+    answer = answer.previousElementSibling
+  }
   if (
-    turn === null ||
-    !turn.contains(selection.anchorNode) ||
-    !turn.contains(selection.focusNode)
+    answer === null ||
+    !answer.contains(selection.anchorNode) ||
+    !answer.contains(selection.focusNode)
   ) {
     return undefined
   }
 
-  const text = selection.toString().trim()
-  return text === '' ? undefined : text
+  const text = selection.toString()
+  return /\S/.test(text) ? text : undefined
 }

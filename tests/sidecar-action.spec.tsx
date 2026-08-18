@@ -85,14 +85,20 @@ describe('SidecarAction', () => {
     })
   })
 
-  it('passes a selection from this answer as the follow-up excerpt', () => {
+  it('keeps this answer selection after the action takes focus', () => {
     const ui = controller()
     const { container } = render(
-      <section data-turn-tail="2">
-        <p>
-          前文<span id="selected-excerpt">精确选中的片段</span>后文
-        </p>
-        <SidecarAction {...props(completedSnapshot, ui)} />
+      <section data-chat-flow>
+        <div data-chat-flow-kind="assistant-step">
+          <p>
+            前文<span id="selected-excerpt">精确选中的片段</span>后文
+          </p>
+        </div>
+        <div data-chat-flow-kind="turn-tail">
+          <div data-turn-tail="2">
+            <SidecarAction {...props(completedSnapshot, ui)} />
+          </div>
+        </div>
       </section>,
     )
     const selected = container.querySelector('#selected-excerpt')
@@ -105,6 +111,7 @@ describe('SidecarAction', () => {
 
     const button = screen.getByRole('button', { name: '追问' })
     fireEvent.pointerDown(button)
+    window.getSelection()?.removeAllRanges()
     fireEvent.click(button)
 
     expect(ui.open).toHaveBeenCalledWith({
