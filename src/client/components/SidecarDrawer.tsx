@@ -1,6 +1,10 @@
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  InjectFace,
+  PropsLocale,
+  PropsRuntime,
+} from '@deepseek-ai/dsh-client-ui-slots'
 import {
   type FormEvent,
   useEffect,
@@ -11,6 +15,10 @@ import {
 import type { SidecarHistoryReader } from '../controllers/harness-history-source.js'
 import type { SidecarSessionGateway } from '../controllers/session-gateway.js'
 import type { SidecarUiController } from '../controllers/sidecar-controller.js'
+import {
+  SIDECAR_LOCALE_NAMESPACE,
+  type SidecarTranslate,
+} from '../locales.js'
 import { ChildProjectionSurface } from './ChildProjectionSurface.js'
 import { styles } from '../styles.js'
 
@@ -22,6 +30,7 @@ interface SidecarDrawerInjected {
 }
 
 export type SidecarDrawerProps = PropsRuntime<'shell.overlay'> &
+  PropsLocale<typeof SIDECAR_LOCALE_NAMESPACE> &
   InjectFace<SidecarDrawerInjected>
 
 export function SidecarDrawer({
@@ -29,6 +38,7 @@ export function SidecarDrawer({
   gateway,
   history,
   openSession,
+  t,
   useSessions,
 }: SidecarDrawerProps) {
   const state = useSyncExternalStore(
@@ -79,20 +89,22 @@ export function SidecarDrawer({
   if (state.status === 'closed') return null
 
   return (
-    <aside aria-label="侧边追问" className={styles.drawer}>
+    <aside aria-label={t('drawer.aria')} className={styles.drawer}>
       <header className={styles.header}>
         <div>
-          <strong>侧边追问</strong>
-          <small>独立保存 · 不写入主对话</small>
+          <strong>{t('drawer.title')}</strong>
+          <small>{t('drawer.subtitle')}</small>
         </div>
-        <button aria-label="关闭侧边追问" onClick={() => void controller.close()} type="button">
+        <button aria-label={t('drawer.close')} onClick={() => void controller.close()} type="button">
           ×
         </button>
       </header>
-      {state.status === 'opening' ? <p className={styles.status}>正在创建或恢复分支…</p> : null}
+      {state.status === 'opening' ? (
+        <p className={styles.status}>{t('drawer.opening')}</p>
+      ) : null}
       {state.status === 'error' ? (
         <p className={styles.status} role="alert">
-          {state.error ?? '无法打开分支，请先检查已有分支。'}
+          {state.error ?? t('drawer.openError')}
         </p>
       ) : null}
       {state.status === 'open' &&
@@ -102,21 +114,21 @@ export function SidecarDrawer({
           {renaming ? (
             <form className={styles.branchEditor} onSubmit={saveRename}>
               <input
-                aria-label="分支名称"
+                aria-label={t('rename.input')}
                 autoFocus
                 onChange={(event) => setRenameTitle(event.currentTarget.value)}
                 value={renameTitle}
               />
               <button disabled={renameTitle.trim() === ''} type="submit">
-                保存名称
+                {t('rename.save')}
               </button>
               <button onClick={() => setRenaming(false)} type="button">
-                取消
+                {t('rename.cancel')}
               </button>
             </form>
           ) : confirmingArchive ? (
-            <div className={styles.branchEditor} role="group" aria-label="确认归档当前分支">
-              <span>归档此分支？</span>
+            <div className={styles.branchEditor} role="group" aria-label={t('archive.group')}>
+              <span>{t('archive.prompt')}</span>
               <button
                 onClick={() => {
                   setConfirmingArchive(false)
@@ -124,16 +136,16 @@ export function SidecarDrawer({
                 }}
                 type="button"
               >
-                确认归档
+                {t('archive.confirm')}
               </button>
               <button onClick={() => setConfirmingArchive(false)} type="button">
-                取消归档
+                {t('archive.cancel')}
               </button>
             </div>
           ) : (
             <>
               <select
-                aria-label="侧边追问分支"
+                aria-label={t('branch.label')}
                 onChange={(event) => {
                   void controller
                     .selectBranch(event.currentTarget.value)
@@ -144,35 +156,35 @@ export function SidecarDrawer({
                 {state.branchIds.map((branchId, index) => (
                   <option key={branchId} value={branchId}>
                     {sessions.byId[branchId as SessionId]?.displayTitle ??
-                      `分支 ${index + 1}`}
+                      t('branch.fallback', { number: index + 1 })}
                   </option>
                 ))}
               </select>
               <button
-                aria-label="重命名当前分支"
+                aria-label={t('branch.renameAria')}
                 onClick={() => {
                   setRenameTitle(child?.displayTitle ?? '')
                   setRenaming(true)
                 }}
                 type="button"
               >
-                重命名
+                {t('branch.rename')}
               </button>
               <button
-                aria-label="新建分支"
+                aria-label={t('branch.newAria')}
                 onClick={() =>
                   void controller.createBranch().catch(() => undefined)
                 }
                 type="button"
               >
-                ＋ 新建
+                {t('branch.new')}
               </button>
               <button
-                aria-label="归档当前分支"
+                aria-label={t('branch.archiveAria')}
                 onClick={() => setConfirmingArchive(true)}
                 type="button"
               >
-                归档
+                {t('branch.archive')}
               </button>
             </>
           )}
@@ -187,7 +199,7 @@ export function SidecarDrawer({
       state.childId !== undefined &&
       pendingInteraction !== undefined ? (
         <div className={styles.pending} role="status">
-          <p>{pendingInteractionText(pendingInteraction)}</p>
+          <p>{pendingInteractionText(pendingInteraction, t)}</p>
           <button
             onClick={() => {
               void controller.close()
@@ -195,7 +207,7 @@ export function SidecarDrawer({
             }}
             type="button"
           >
-            打开子会话处理
+            {t('pending.open')}
           </button>
         </div>
       ) : null}
@@ -210,14 +222,18 @@ export function SidecarDrawer({
           history={history}
           key={state.childId}
           running={running}
+          t={t}
         />
       ) : null}
     </aside>
   )
 }
 
-function pendingInteractionText(kind: 'approval' | 'plan-review' | 'question'): string {
-  if (kind === 'approval') return '侧边会话正在等待工具审批。'
-  if (kind === 'question') return '侧边会话正在等待你的回答。'
-  return '侧边会话正在等待计划确认。'
+function pendingInteractionText(
+  kind: 'approval' | 'plan-review' | 'question',
+  t: SidecarTranslate,
+): string {
+  if (kind === 'approval') return t('pending.approval')
+  if (kind === 'question') return t('pending.question')
+  return t('pending.plan')
 }

@@ -4,6 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ChildProjectionSurface } from '../src/client/components/ChildProjectionSurface.js'
 import type { SidecarHistoryReader } from '../src/client/controllers/harness-history-source.js'
 import type { SidecarSessionGateway } from '../src/client/controllers/session-gateway.js'
+import {
+  SIDECAR_LOCALES,
+  type SidecarTranslate,
+} from '../src/client/locales.js'
 import type { SidecarHistoryEvent } from '../src/host/derived-anchor-repository.js'
 
 afterEach(() => {
@@ -18,6 +22,9 @@ function deferred<T>() {
   })
   return { promise, resolve }
 }
+
+const t = ((key: string) =>
+  (SIDECAR_LOCALES.zh as Record<string, string>)[key] ?? key) as SidecarTranslate
 
 function harness(excerpt?: string) {
   const gateway: SidecarSessionGateway = {
@@ -40,6 +47,7 @@ function harness(excerpt?: string) {
       gateway={gateway}
       history={history}
       running={false}
+      t={t}
     />,
   )
 
@@ -124,6 +132,7 @@ describe('ChildProjectionSurface composer', () => {
         gateway={gateway}
         history={history}
         running={false}
+        t={t}
       />,
     )
     await Promise.resolve()
@@ -169,6 +178,7 @@ describe('ChildProjectionSurface composer', () => {
         gateway={gateway}
         history={history}
         running={false}
+        t={t}
       />,
     )
 
@@ -179,6 +189,7 @@ describe('ChildProjectionSurface composer', () => {
         gateway={gateway}
         history={history}
         running={false}
+        t={t}
       />,
     )
     await waitFor(() => expect(screen.getByText('来自 B')).toBeTruthy())

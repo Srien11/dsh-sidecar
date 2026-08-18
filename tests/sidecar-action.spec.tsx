@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { SidecarAction } from '../src/client/components/SidecarAction.js'
 import type { SidecarActionProps } from '../src/client/components/SidecarAction.js'
+import { SIDECAR_LOCALES } from '../src/client/locales.js'
 import type {
   SidecarControllerState,
   SidecarUiController,
@@ -18,11 +19,14 @@ function props(
   controller: SidecarUiController,
   messageId = 'answer-1',
   archivedSessionIds: string[] = [],
+  locale: 'en' | 'zh' = 'zh',
 ): SidecarActionProps {
+  const dictionary = SIDECAR_LOCALES[locale] as Record<string, string>
   return {
     controller,
     messageId,
     sessionId: 'parent',
+    t: (key: string) => dictionary[key] ?? key,
     useSession: (selector: (value: unknown) => unknown) => selector(snapshot),
     useSessions: (selector: (value: unknown) => unknown) =>
       selector({ ids: ['parent'], byId: {}, current: 'parent' }),
@@ -149,5 +153,16 @@ describe('SidecarAction', () => {
     const button = screen.getByRole('button', { name: '正在打开追问' })
     expect(button.getAttribute('aria-disabled')).toBe('true')
     expect(button.getAttribute('title')).toBe('正在创建或恢复分支…')
+  })
+
+  it('renders the English action from the active locale', () => {
+    const ui = controller()
+    render(
+      <SidecarAction
+        {...props(completedSnapshot, ui, 'answer-1', [], 'en')}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Ask follow-up' })).toBeTruthy()
   })
 })

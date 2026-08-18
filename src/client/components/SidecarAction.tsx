@@ -1,10 +1,15 @@
 import type { MessageId } from '@deepseek-ai/dsh-client-connection/client'
 import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  InjectFace,
+  PropsLocale,
+  PropsRuntime,
+} from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import type { SidecarUiController } from '../controllers/sidecar-controller.js'
+import { SIDECAR_LOCALE_NAMESPACE } from '../locales.js'
 import { selectionTextWithin } from '../controllers/selection.js'
 import { styles } from '../styles.js'
 
@@ -13,6 +18,7 @@ interface SidecarActionInjected {
 }
 
 export type SidecarActionProps = PropsRuntime<'conversation.chat.assistant-actions'> &
+  PropsLocale<typeof SIDECAR_LOCALE_NAMESPACE> &
   InjectFace<SidecarActionInjected>
 
 interface AnswerBoundary {
@@ -46,6 +52,7 @@ export function SidecarAction({
   controller,
   messageId,
   sessionId,
+  t,
   useSession,
   useSessions,
   useWorkspaces,
@@ -82,7 +89,7 @@ export function SidecarAction({
 
   const key = `${sessionId}:${boundary.turnEndSeq}`
   const busy = state.status === 'opening' && state.anchorKey === key
-  const label = busy ? '正在打开追问' : '追问'
+  const label = t(busy ? 'action.opening' : 'action.ask')
 
   return (
     <button
@@ -106,7 +113,7 @@ export function SidecarAction({
       onPointerDown={(event) => {
         pointerExcerpt.current = selectionTextWithin(event.currentTarget)
       }}
-      title={busy ? '正在创建或恢复分支…' : '在侧边栏中追问，不改动主对话'}
+      title={t(busy ? 'action.openingTitle' : 'action.title')}
       type="button"
     >
       <span aria-hidden="true">↗</span>

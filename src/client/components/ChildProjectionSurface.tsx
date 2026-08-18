@@ -11,6 +11,7 @@ import type { SidecarHistoryReader } from '../controllers/harness-history-source
 import type { SidecarSessionGateway } from '../controllers/session-gateway.js'
 import { buildTranscript } from '../controllers/transcript.js'
 import type { SidecarTranscriptMessage } from '../controllers/transcript.js'
+import type { SidecarTranslate } from '../locales.js'
 import { styles } from '../styles.js'
 
 const ACTIVE_POLL_MS = 850
@@ -23,6 +24,7 @@ export interface ChildProjectionSurfaceProps {
   gateway: SidecarSessionGateway
   history: SidecarHistoryReader
   running: boolean
+  t: SidecarTranslate
 }
 
 export function ChildProjectionSurface({
@@ -32,8 +34,9 @@ export function ChildProjectionSurface({
   gateway,
   history,
   running,
+  t,
 }: ChildProjectionSurfaceProps) {
-  const [draft, setDraft] = useState(() => excerptDraft(excerpt))
+  const [draft, setDraft] = useState(() => excerptDraft(excerpt, t('excerpt.prompt')))
   const [error, setError] = useState<string>()
   const [messages, setMessages] = useState<readonly SidecarTranscriptMessage[]>([])
   const [sending, setSending] = useState(false)
@@ -142,15 +145,21 @@ export function ChildProjectionSurface({
       {excerpt === undefined ? null : (
         <blockquote className={styles.excerpt}>{excerpt}</blockquote>
       )}
-      <p className={styles.contextNote}>已继承所选回答之前的上下文；下面只显示分支新增内容。</p>
+      <p className={styles.contextNote}>{t('composer.context')}</p>
       <div aria-live="polite" className={styles.transcript}>
         {messages.length === 0 ? (
-          <p className={styles.empty}>输入一个针对性追问。</p>
+          <p className={styles.empty}>{t('composer.empty')}</p>
         ) : (
           messages.map((message) => (
             <article className={styles[message.role]} key={message.id}>
               <span className={styles.role}>
-                {message.role === 'user' ? '你' : message.role === 'assistant' ? 'AI' : '状态'}
+                {t(
+                  message.role === 'user'
+                    ? 'role.user'
+                    : message.role === 'assistant'
+                      ? 'role.assistant'
+                      : 'role.status',
+                )}
               </span>
               <p>{message.text}</p>
             </article>
@@ -164,11 +173,11 @@ export function ChildProjectionSurface({
       )}
       <form className={styles.composer} onSubmit={submit}>
         <textarea
-          aria-label="侧边追问"
+          aria-label={t('composer.aria')}
           autoFocus
           onChange={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={onComposerKeyDown}
-          placeholder="继续追问…（Enter 发送，Shift+Enter 换行）"
+          placeholder={t('composer.placeholder')}
           rows={3}
           value={draft}
         />
@@ -178,11 +187,11 @@ export function ChildProjectionSurface({
               onClick={() => void gateway.cancel(childSessionId).catch(() => undefined)}
               type="button"
             >
-              停止
+              {t('composer.stop')}
             </button>
           ) : null}
           <button disabled={sending || draft.trim() === ''} type="submit">
-            {sending ? '发送中…' : '发送'}
+            {t(sending ? 'composer.sending' : 'composer.send')}
           </button>
         </div>
       </form>
@@ -190,12 +199,15 @@ export function ChildProjectionSurface({
   )
 }
 
-export function excerptDraft(excerpt: string | undefined): string {
+export function excerptDraft(
+  excerpt: string | undefined,
+  prompt = '针对以下选中片段：',
+): string {
   if (excerpt === undefined) return ''
   const quoted = excerpt
     .replaceAll('\r\n', '\n')
     .split('\n')
     .map((line) => `> ${line}`)
     .join('\n')
-  return `针对以下选中片段：\n\n${quoted}\n\n`
+  return `${prompt}\n\n${quoted}\n\n`
 }

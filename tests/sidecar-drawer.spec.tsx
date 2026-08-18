@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SidecarDrawer } from '../src/client/components/SidecarDrawer.js'
 import type { SidecarDrawerProps } from '../src/client/components/SidecarDrawer.js'
 import type { SidecarUiController } from '../src/client/controllers/sidecar-controller.js'
+import { SIDECAR_LOCALES } from '../src/client/locales.js'
 
 afterEach(cleanup)
 
@@ -36,6 +37,7 @@ function props(
     subscribe: () => () => undefined,
     ...overrides.controller,
   }
+  const dictionary = SIDECAR_LOCALES.zh as Record<string, string>
 
   return {
     controller,
@@ -49,6 +51,11 @@ function props(
     },
     history: { history: vi.fn().mockResolvedValue([]) },
     openSession,
+    t: (key: string, params?: Record<string, unknown>) =>
+      (dictionary[key] ?? key).replace(
+        /\{(\w+)\}/g,
+        (_, name: string) => String(params?.[name] ?? `{${name}}`),
+      ),
     useSessions: (selector: (snapshot: unknown) => unknown) =>
       selector({
         byId: {
