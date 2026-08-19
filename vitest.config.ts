@@ -5,5 +5,10 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['tests/**/*.spec.{ts,tsx}'],
     passWithNoTests: false,
+    server: {
+      deps: {
+        inline: ['@deepseek-ai/dsh-client-ui-primitives'],
+      },
+    },
   },
 })

@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 
 import type { SidecarHistoryReader } from '../controllers/harness-history-source.js'
 import type { SidecarSessionGateway } from '../controllers/session-gateway.js'
@@ -174,7 +175,16 @@ export function ChildProjectionSurface({
                       : 'role.status',
                 )}
               </span>
-              <p>{message.text}</p>
+              {message.role === 'assistant' ? (
+                <div className={styles.markdown}>
+                  <MarkdownText
+                    streaming={message.pending === true}
+                    text={message.text}
+                  />
+                </div>
+              ) : (
+                <p>{message.text}</p>
+              )}
             </article>
           ))
         )}

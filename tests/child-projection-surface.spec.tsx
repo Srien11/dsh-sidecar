@@ -58,6 +58,101 @@ function harness(excerpt?: string) {
 }
 
 describe('ChildProjectionSurface composer', () => {
+  it('renders assistant Markdown as semantic content instead of source markers', async () => {
+    const history: SidecarHistoryReader = {
+      history: vi.fn().mockResolvedValue([
+        {
+          data: {
+            message: {
+              content: [
+                {
+                  text: [
+                    '## HTTP/2 差异',
+                    '',
+                    '**规范层面**：支持多路复用。',
+                    '',
+                    '- 不使用 `Transfer-Encoding`',
+                    '- 使用帧传输',
+                    '',
+                    '```http',
+                    'cache-control: no-cache',
+                    '```',
+                  ].join('\n'),
+                  type: 'text',
+                },
+              ],
+              id: 'answer-markdown',
+            },
+            step: 1,
+            turn: 2,
+          },
+          seq: 11,
+          type: 'assistant/message',
+        },
+      ]),
+    }
+
+    render(
+      <ChildProjectionSurface
+        afterSeq={10}
+        childSessionId="child"
+        gateway={{
+          cancel: vi.fn(),
+          closeChildSurface: vi.fn(),
+          fork: vi.fn(),
+          openChildSurface: vi.fn(),
+          prompt: vi.fn(),
+          rename: vi.fn(),
+        }}
+        history={history}
+        running={false}
+        t={t}
+      />,
+    )
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'HTTP/2 差异' }),
+    ).toBeTruthy()
+    expect(screen.getByText('规范层面').tagName).toBe('STRONG')
+    expect(screen.getByText('Transfer-Encoding').tagName).toBe('CODE')
+    expect(screen.getByText('cache-control: no-cache').closest('pre')).toBeTruthy()
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    expect(screen.queryByText('## HTTP/2 差异')).toBeNull()
+  })
+
+  it('keeps user-authored Markdown markers as plain text', async () => {
+    const history: SidecarHistoryReader = {
+      history: vi.fn().mockResolvedValue([
+        {
+          data: { content: [{ text: '## 只是用户输入', type: 'text' }] },
+          seq: 11,
+          type: 'user/message',
+        },
+      ]),
+    }
+
+    render(
+      <ChildProjectionSurface
+        afterSeq={10}
+        childSessionId="child"
+        gateway={{
+          cancel: vi.fn(),
+          closeChildSurface: vi.fn(),
+          fork: vi.fn(),
+          openChildSurface: vi.fn(),
+          prompt: vi.fn(),
+          rename: vi.fn(),
+        }}
+        history={history}
+        running={false}
+        t={t}
+      />,
+    )
+
+    expect(await screen.findByText('## 只是用户输入')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: '只是用户输入' })).toBeNull()
+  })
+
   it('shows and quotes the selected excerpt in the initial draft', () => {
     const test = harness('第一行\n第二行')
 

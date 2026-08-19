@@ -11,4 +11,13 @@ describe('sidecar theme styles', () => {
     expect(STYLE_TEXT).toContain('var(--dsw-shadow-lv3)')
     expect(STYLE_TEXT).not.toMatch(/Canvas|#4f7cff|#d97706|#b42318/i)
   })
+
+  it('defines scoped typography for rendered assistant Markdown', () => {
+    expect(STYLE_TEXT).toContain('.dsh-sidecar-markdown')
+    expect(STYLE_TEXT).toMatch(/\.dsh-sidecar-markdown h[1-6]/)
+    expect(STYLE_TEXT).toContain('.dsh-sidecar-markdown pre')
+    expect(STYLE_TEXT).toContain('.dsh-sidecar-markdown code')
+    expect(STYLE_TEXT).toContain('.dsh-sidecar-markdown blockquote')
+    expect(STYLE_TEXT).toContain('.dsh-sidecar-markdown table')
+  })
 })
