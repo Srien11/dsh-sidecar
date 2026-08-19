@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { selectionTextWithin } from '../src/client/controllers/selection.js'
+import {
+  selectionSnapshotWithin,
+  selectionTextWithin,
+} from '../src/client/controllers/selection.js'
 
 afterEach(() => {
   document.body.replaceChildren()
@@ -17,6 +20,31 @@ function select(element: Element): Selection | null {
 }
 
 describe('selectionTextWithin', () => {
+  it('returns the exact selection and its viewport rectangle', () => {
+    document.body.innerHTML = `
+      <section data-chat-flow>
+        <div data-chat-flow-kind="assistant-step">
+          <pre id="selected"></pre>
+        </div>
+        <div data-chat-flow-kind="turn-tail">
+          <button id="action">追问</button>
+        </div>
+      </section>
+    `
+    const selected = document.querySelector('#selected') as Element
+    const action = document.querySelector('#action') as Element
+    const exact = '结论：\nconst value = 1;\n'
+    selected.textContent = exact
+    const selection = select(selected)
+    const range = selection?.getRangeAt(0)
+    const rect = new DOMRect(120, 80, 64, 20)
+    Object.defineProperty(range, 'getBoundingClientRect', {
+      value: () => rect,
+    })
+
+    expect(selectionSnapshotWithin(action, selection)).toEqual({ rect, text: exact })
+  })
+
   it('returns the exact selection from the assistant row owned by this action', () => {
     document.body.innerHTML = `
       <section data-chat-flow>

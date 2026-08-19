@@ -15,6 +15,7 @@ export const styles = {
   markdown: 'dsh-sidecar-markdown',
   pending: 'dsh-sidecar-pending',
   role: 'dsh-sidecar-role',
+  selectionAction: 'dsh-sidecar-selection-action',
   status: 'dsh-sidecar-status',
   surface: 'dsh-sidecar-surface',
   tool: 'dsh-sidecar-tool',
@@ -27,6 +28,8 @@ export const STYLE_TEXT = `
 .dsh-sidecar-action:hover,.dsh-sidecar-action:focus-visible{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsh-sidecar-action:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
 .dsh-sidecar-action:disabled{cursor:progress;opacity:.48}
+.dsh-sidecar-selection-action{align-items:center;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);border-radius:.55rem;box-shadow:var(--dsw-shadow-lv2);color:var(--dsw-alias-label-primary);cursor:pointer;display:inline-flex;font-family:var(--dsw-font-family);font-size:.82rem;gap:.3rem;min-height:2rem;padding:.3rem .55rem;white-space:nowrap;z-index:79}
+.dsh-sidecar-selection-action:hover{background:var(--dsw-alias-interactive-bg-hover-solid)}.dsh-sidecar-selection-action:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.dsh-sidecar-selection-action:disabled{cursor:progress;opacity:.48}
 .dsh-sidecar-count{background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;font-size:.72em;min-width:1.25rem;padding:.08rem .35rem;text-align:center}
 .dsh-sidecar-drawer{--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);background:var(--dsw-alias-bg-base);border-left:1px solid var(--dsw-alias-border-l2);bottom:0;box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);display:flex;flex-direction:column;font-family:var(--dsw-font-family);position:fixed;right:0;top:0;width:clamp(360px,42vw,680px);z-index:80}
 .dsh-sidecar-header{align-items:center;border-bottom:1px solid var(--dsw-alias-border-l2);display:flex;justify-content:space-between;min-height:3.5rem;padding:0 1rem}

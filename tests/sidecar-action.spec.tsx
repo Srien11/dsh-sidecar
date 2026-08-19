@@ -123,6 +123,77 @@ describe('SidecarAction', () => {
     })
   })
 
+  it('opens an immediate follow-up from the selection beside this answer', async () => {
+    const ui = controller()
+    const { container } = render(
+      <section data-chat-flow>
+        <div data-chat-flow-kind="assistant-step">
+          <p>
+            前文
+            <span id="inline-selection">{'结论：\nconst value = 1;'}</span>
+            后文
+          </p>
+        </div>
+        <div data-chat-flow-kind="turn-tail">
+          <SidecarAction {...props(completedSnapshot, ui)} />
+        </div>
+      </section>,
+    )
+    const selected = container.querySelector('#inline-selection') as Element
+    const range = document.createRange()
+    range.selectNodeContents(selected)
+    Object.defineProperty(range, 'getBoundingClientRect', {
+      value: () => new DOMRect(120, 80, 64, 20),
+    })
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+
+    const floating = await screen.findByRole('button', {
+      name: '追问选中内容',
+    })
+    expect(floating.style.position).toBe('fixed')
+    expect(floating.style.left).not.toBe('')
+    expect(floating.style.top).not.toBe('')
+
+    fireEvent.pointerDown(floating)
+    window.getSelection()?.removeAllRanges()
+    fireEvent.click(floating)
+
+    expect(ui.open).toHaveBeenCalledWith({
+      excerpt: '结论：\nconst value = 1;',
+      parentId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+  })
+
+  it('does not show the immediate action for a page selection', async () => {
+    const ui = controller()
+    const { container } = render(
+      <main>
+        <p id="page-selection">页面上的其他文字</p>
+        <section data-chat-flow>
+          <div data-chat-flow-kind="assistant-step">当前回答</div>
+          <div data-chat-flow-kind="turn-tail">
+            <SidecarAction {...props(completedSnapshot, ui)} />
+          </div>
+        </section>
+      </main>,
+    )
+    const range = document.createRange()
+    range.selectNodeContents(container.querySelector('#page-selection') as Element)
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: '追问选中内容' }),
+      ).toBeNull(),
+    )
+  })
+
   it('shows the number of persistent children', async () => {
     const ui = controller()
     vi.mocked(ui.branchCount).mockResolvedValue(2)

@@ -5,9 +5,11 @@ export const SIDECAR_LOCALE_NAMESPACE = 'dsh-sidecar'
 
 const zh = {
   'action.ask': '追问',
+  'action.askSelection': '追问选中内容',
   'action.opening': '正在打开追问',
   'action.openingTitle': '正在创建或恢复分支…',
   'action.title': '在侧边栏中追问，不改动主对话',
+  'action.selectionTitle': '立即针对选中内容追问',
   'archive.cancel': '取消归档',
   'archive.confirm': '确认归档',
   'archive.group': '确认归档当前分支',
@@ -50,9 +52,11 @@ export type SidecarLocaleKey = keyof typeof zh
 
 const en: Record<SidecarLocaleKey, string> = {
   'action.ask': 'Ask follow-up',
+  'action.askSelection': 'Ask about selected text',
   'action.opening': 'Opening follow-up',
   'action.openingTitle': 'Creating or restoring branch…',
   'action.title': 'Ask in the side panel without changing the main conversation',
+  'action.selectionTitle': 'Ask about the selected text now',
   'archive.cancel': 'Cancel',
   'archive.confirm': 'Archive',
   'archive.group': 'Confirm branch archive',
