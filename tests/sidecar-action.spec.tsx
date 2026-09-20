@@ -26,7 +26,11 @@ function props(
     controller,
     messageId,
     sessionId: 'parent',
-    t: (key: string) => dictionary[key] ?? key,
+    t: (key: string, params?: Record<string, unknown>) =>
+      (dictionary[key] ?? key).replace(
+        /\{(\w+)\}/g,
+        (_, name: string) => String(params?.[name] ?? `{${name}}`),
+      ),
     useSession: (selector: (value: unknown) => unknown) => selector(snapshot),
     useSessions: (selector: (value: unknown) => unknown) =>
       selector({ ids: ['parent'], byId: {}, current: 'parent' }),
@@ -45,6 +49,7 @@ function controller(state: Partial<SidecarControllerState> = {}): SidecarUiContr
     getSnapshot: () => snapshot,
     rememberReturnFocus: vi.fn(),
     open: vi.fn().mockResolvedValue('child'),
+    branches: vi.fn().mockResolvedValue([]),
     prompt: vi.fn().mockResolvedValue(undefined),
     selectBranch: vi.fn().mockResolvedValue(undefined),
     subscribe: () => () => undefined,
@@ -57,6 +62,21 @@ const completedSnapshot = {
     { kind: 'steering', messageId: 'steer-1', seq: 9 },
   ],
   turnEnds: new Map([[2, 10]]),
+}
+
+/** Answer row immediately owned by a turn-tail action, without stray text nodes. */
+function answerWithTail(answer: string, ui: SidecarUiController) {
+  return (
+    <section data-chat-flow>
+      <div
+        data-chat-flow-kind="assistant-step"
+        dangerouslySetInnerHTML={{ __html: answer }}
+      />
+      <div data-chat-flow-kind="turn-tail">
+        <SidecarAction {...props(completedSnapshot, ui)} />
+      </div>
+    </section>
+  )
 }
 
 describe('SidecarAction', () => {
@@ -80,6 +100,7 @@ describe('SidecarAction', () => {
     expect(ui.rememberReturnFocus).toHaveBeenCalledWith(button)
     expect(ui.open).toHaveBeenCalledTimes(1)
     expect(ui.open).toHaveBeenCalledWith({
+      fresh: true,
       parentId: 'parent',
       seedLength: 11,
       turnEndSeq: 10,
@@ -89,18 +110,10 @@ describe('SidecarAction', () => {
   it('keeps this answer selection after the action takes focus', () => {
     const ui = controller()
     const { container } = render(
-      <section data-chat-flow>
-        <div data-chat-flow-kind="assistant-step">
-          <p>
-            前文<span id="selected-excerpt">精确选中的片段</span>后文
-          </p>
-        </div>
-        <div data-chat-flow-kind="turn-tail">
-          <div data-turn-tail="2">
-            <SidecarAction {...props(completedSnapshot, ui)} />
-          </div>
-        </div>
-      </section>,
+      answerWithTail(
+        '<p>前文<span id="selected-excerpt">精确选中的片段</span>后文</p>',
+        ui,
+      ),
     )
     const selected = container.querySelector('#selected-excerpt')
     expect(selected).not.toBeNull()
@@ -117,6 +130,8 @@ describe('SidecarAction', () => {
 
     expect(ui.open).toHaveBeenCalledWith({
       excerpt: '精确选中的片段',
+      excerptOffset: 2,
+      fresh: true,
       parentId: 'parent',
       seedLength: 11,
       turnEndSeq: 10,
@@ -126,18 +141,10 @@ describe('SidecarAction', () => {
   it('opens an immediate follow-up from the selection beside this answer', async () => {
     const ui = controller()
     const { container } = render(
-      <section data-chat-flow>
-        <div data-chat-flow-kind="assistant-step">
-          <p>
-            前文
-            <span id="inline-selection">{'结论：\nconst value = 1;'}</span>
-            后文
-          </p>
-        </div>
-        <div data-chat-flow-kind="turn-tail">
-          <SidecarAction {...props(completedSnapshot, ui)} />
-        </div>
-      </section>,
+      answerWithTail(
+        '<p>前文<span id="inline-selection">结论：\nconst value = 1;</span>后文</p>',
+        ui,
+      ),
     )
     const selected = container.querySelector('#inline-selection') as Element
     const range = document.createRange()
@@ -162,6 +169,8 @@ describe('SidecarAction', () => {
 
     expect(ui.open).toHaveBeenCalledWith({
       excerpt: '结论：\nconst value = 1;',
+      excerptOffset: 2,
+      fresh: true,
       parentId: 'parent',
       seedLength: 11,
       turnEndSeq: 10,
@@ -194,32 +203,112 @@ describe('SidecarAction', () => {
     )
   })
 
-  it('shows the number of persistent children', async () => {
+  it('lists existing follow-ups by summary instead of position', async () => {
     const ui = controller()
-    vi.mocked(ui.branchCount).mockResolvedValue(2)
+    vi.mocked(ui.branches).mockResolvedValue([
+      { childId: 'child-a', summary: '为什么先合并提交', updatedAt: 20 },
+      { childId: 'child-b', title: '缓存失效边界', updatedAt: 10 },
+    ])
     render(<SidecarAction {...props(completedSnapshot, ui)} />)
 
-    await waitFor(() => expect(screen.getByRole('button').textContent).toContain('2'))
+    const existing = await screen.findByRole('combobox', { name: '已有追问' })
+    expect((existing as HTMLSelectElement).value).toBe('')
+    expect(
+      screen.getByRole('option', {
+        name: '已有追问（2）· 最新：为什么先合并提交',
+      }),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('option', { name: '为什么先合并提交' }),
+    ).toBeTruthy()
+    expect(screen.getByRole('option', { name: '缓存失效边界' })).toBeTruthy()
+    expect(screen.queryByRole('option', { name: '追问 1' })).toBeNull()
   })
 
-  it('refreshes the branch count when archived sessions change', async () => {
+  it('falls back to a positional label when a follow-up has no text yet', async () => {
     const ui = controller()
-    vi.mocked(ui.branchCount)
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(1)
+    vi.mocked(ui.branches).mockResolvedValue([
+      { childId: 'child-a', updatedAt: 20 },
+    ])
+    render(<SidecarAction {...props(completedSnapshot, ui)} />)
+
+    expect(
+      await screen.findByRole('option', { name: '追问 1' }),
+    ).toBeTruthy()
+  })
+
+  it('restores one existing follow-up without sharing it inside the drawer', async () => {
+    const ui = controller()
+    vi.mocked(ui.branches).mockResolvedValue([
+      { childId: 'child-a', summary: '第一个问题', updatedAt: 20 },
+      { childId: 'child-b', summary: '第二个问题', updatedAt: 10 },
+    ])
+    render(<SidecarAction {...props(completedSnapshot, ui)} />)
+
+    const existing = await screen.findByRole('combobox', { name: '已有追问' })
+    fireEvent.change(existing, { target: { value: 'child-b' } })
+
+    expect(ui.open).toHaveBeenCalledWith({
+      branchId: 'child-b',
+      parentId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+  })
+
+  it('keeps the current follow-up selected and visibly marked', async () => {
+    const ui = controller({
+      childId: 'child-b',
+      parentId: 'parent',
+      seedLength: 11,
+      status: 'open',
+      turnEndSeq: 10,
+    })
+    vi.mocked(ui.branches).mockResolvedValue([
+      { childId: 'child-a', summary: '第一个问题', updatedAt: 20 },
+      { childId: 'child-b', summary: '第二个问题', updatedAt: 10 },
+    ])
+    render(<SidecarAction {...props(completedSnapshot, ui)} />)
+
+    const existing = await screen.findByRole('combobox', { name: '已有追问' })
+    await waitFor(() => expect((existing as HTMLSelectElement).value).toBe('child-b'))
+    expect(existing.classList.contains('dsh-sidecar-branch-restore-active')).toBe(
+      true,
+    )
+    expect(
+      screen
+        .getByRole('option', { name: '第二个问题' })
+        .getAttribute('aria-current'),
+    ).toBe('true')
+  })
+
+  it('refreshes the branch list when archived sessions change', async () => {
+    const ui = controller()
+    vi.mocked(ui.branches)
+      .mockResolvedValueOnce([
+        { childId: 'child-a', summary: '第一个问题', updatedAt: 20 },
+        { childId: 'child-b', summary: '第二个问题', updatedAt: 10 },
+      ])
+      .mockResolvedValueOnce([
+        { childId: 'child-a', summary: '第一个问题', updatedAt: 20 },
+      ])
     const { rerender } = render(
       <SidecarAction {...props(completedSnapshot, ui)} />,
     )
 
-    await waitFor(() => expect(screen.getByRole('button').textContent).toContain('2'))
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: '第二个问题' })).toBeTruthy(),
+    )
     rerender(
       <SidecarAction
         {...props(completedSnapshot, ui, 'answer-1', ['archived-child'])}
       />,
     )
 
-    await waitFor(() => expect(screen.getByRole('button').textContent).toContain('1'))
-    expect(ui.branchCount).toHaveBeenCalledTimes(2)
+    await waitFor(() =>
+      expect(screen.queryByRole('option', { name: '第二个问题' })).toBeNull(),
+    )
+    expect(ui.branches).toHaveBeenCalledTimes(2)
   })
 
   it('exposes localized disabled state while the same anchor is opening', () => {
@@ -231,7 +320,7 @@ describe('SidecarAction', () => {
 
     const button = screen.getByRole('button', { name: '正在打开追问' })
     expect(button.getAttribute('aria-disabled')).toBe('true')
-    expect(button.getAttribute('title')).toBe('正在创建或恢复分支…')
+    expect(button.getAttribute('title')).toBe('正在创建或恢复追问…')
   })
 
   it('renders the English action from the active locale', () => {
@@ -243,5 +332,99 @@ describe('SidecarAction', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Ask follow-up' })).toBeTruthy()
+  })
+})
+
+describe('SidecarAction in-answer highlights', () => {
+  it('marks the excerpt of a selection follow-up and opens it on activation', async () => {
+    const ui = controller()
+    vi.mocked(ui.branches).mockResolvedValue([
+      {
+        childId: 'child-a',
+        excerpt: '精确选中的片段',
+        excerptOffset: 2,
+        summary: '这里为什么这么写',
+        updatedAt: 20,
+      },
+    ])
+    render(answerWithTail('<p>前文精确选中的片段后文</p>', ui))
+
+    const mark = await screen.findByRole('button', {
+      name: '打开追问：这里为什么这么写',
+    })
+    expect(mark.textContent).toBe('精确选中的片段')
+    expect(mark.getAttribute('data-dsh-sidecar-branch')).toBe('child-a')
+    expect(mark.className).toBe('dsh-sidecar-highlight')
+
+    fireEvent.click(mark)
+
+    expect(ui.rememberReturnFocus).toHaveBeenCalledWith(mark)
+    expect(ui.open).toHaveBeenCalledWith({
+      branchId: 'child-a',
+      parentId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+  })
+
+  it('highlights the recorded occurrence when the excerpt repeats', async () => {
+    const ui = controller()
+    vi.mocked(ui.branches).mockResolvedValue([
+      {
+        childId: 'child-a',
+        excerpt: '重复片段',
+        excerptOffset: 10,
+        summary: '第二个重复片段',
+        updatedAt: 20,
+      },
+    ])
+    const { container } = render(
+      answerWithTail('<p>重复片段，中间文字，重复片段</p>', ui),
+    )
+
+    const mark = await screen.findByRole('button', {
+      name: '打开追问：第二个重复片段',
+    })
+    expect(mark.textContent).toBe('重复片段')
+    expect(container.querySelectorAll('mark.dsh-sidecar-highlight').length).toBe(1)
+    expect(mark.previousSibling?.textContent).toBe('重复片段，中间文字，')
+    expect(container.querySelector('p')?.textContent).toBe(
+      '重复片段，中间文字，重复片段',
+    )
+  })
+
+  it('leaves the answer untouched when a branch has no excerpt', async () => {
+    const ui = controller()
+    vi.mocked(ui.branches).mockResolvedValue([
+      { childId: 'child-a', summary: '只在段尾的追问', updatedAt: 20 },
+    ])
+    const { container } = render(answerWithTail('<p>当前回答内容</p>', ui))
+
+    await screen.findByRole('combobox', { name: '已有追问' })
+    expect(container.querySelectorAll('mark.dsh-sidecar-highlight').length).toBe(0)
+    expect(container.querySelector('p')?.textContent).toBe('当前回答内容')
+  })
+
+  it('does not mark an excerpt that spans two blocks', async () => {
+    const ui = controller()
+    vi.mocked(ui.branches).mockResolvedValue([
+      {
+        childId: 'child-a',
+        excerpt: '第一段第二段',
+        summary: '跨段落追问',
+        updatedAt: 20,
+      },
+    ])
+    const { container } = render(
+      answerWithTail('<p>第一段</p><p>第二段</p>', ui),
+    )
+
+    await screen.findByRole('combobox', { name: '已有追问' })
+    await waitFor(() =>
+      expect(container.querySelectorAll('mark.dsh-sidecar-highlight').length).toBe(0),
+    )
+    expect(
+      container.querySelector('[data-chat-flow-kind="assistant-step"]')?.textContent,
+    ).toBe('第一段第二段')
   })
 })

@@ -6,8 +6,12 @@ import type {
   PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import {
+  type CSSProperties,
   type FormEvent,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react'
@@ -20,6 +24,19 @@ import {
   type SidecarTranslate,
 } from '../locales.js'
 import { ChildProjectionSurface } from './ChildProjectionSurface.js'
+import {
+  SIDECAR_WINDOW_EDGES,
+  SIDECAR_WINDOW_KEYBOARD_STEP,
+  type SidecarWindowEdge,
+  type SidecarWindowRect,
+  clampWindowRect,
+  defaultWindowRect,
+  moveWindowRect,
+  nudgeWindowRect,
+  readStoredWindowRect,
+  resizeWindowRect,
+  storeWindowRect,
+} from '../window-geometry.js'
 import { styles } from '../styles.js'
 
 interface SidecarDrawerInjected {
@@ -32,6 +49,24 @@ interface SidecarDrawerInjected {
 export type SidecarDrawerProps = PropsRuntime<'shell.overlay'> &
   PropsLocale<typeof SIDECAR_LOCALE_NAMESPACE> &
   InjectFace<SidecarDrawerInjected>
+
+interface DragState {
+  edge?: SidecarWindowEdge
+  pointerId: number
+  x: number
+  y: number
+}
+
+function viewport(): { height: number; width: number } {
+  return { height: window.innerHeight, width: window.innerWidth }
+}
+
+const KEY_DIRECTIONS: Record<string, { dx: number; dy: number }> = {
+  ArrowDown: { dx: 0, dy: 1 },
+  ArrowLeft: { dx: -1, dy: 0 },
+  ArrowRight: { dx: 1, dy: 0 },
+  ArrowUp: { dx: 0, dy: -1 },
+}
 
 export function SidecarDrawer({
   controller,
@@ -57,12 +92,31 @@ export function SidecarDrawer({
   const [renaming, setRenaming] = useState(false)
   const [renameTitle, setRenameTitle] = useState('')
   const [branchError, setBranchError] = useState<string>()
+  const [frame, setFrame] = useState<SidecarWindowRect>(() =>
+    clampWindowRect(
+      readStoredWindowRect() ?? defaultWindowRect(viewport()),
+      viewport(),
+    ),
+  )
+  const dragRef = useRef<DragState>()
 
   useEffect(() => {
     setConfirmingArchive(false)
     setRenaming(false)
     setBranchError(undefined)
   }, [state.childId])
+
+  useEffect(() => {
+    storeWindowRect(frame)
+  }, [frame])
+
+  useEffect(() => {
+    const onResize = () => {
+      setFrame((current) => clampWindowRect(current, viewport()))
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const saveRename = async (event: FormEvent) => {
     event.preventDefault()
@@ -79,23 +133,156 @@ export function SidecarDrawer({
 
   useEffect(() => {
     if (state.status === 'closed') return () => undefined
-    const onKeyDown = (event: KeyboardEvent) => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') void controller.close()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [controller, state.status])
 
+  const beginDrag = (
+    event: ReactPointerEvent<HTMLElement>,
+    edge?: SidecarWindowEdge,
+  ) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    dragRef.current = {
+      ...(edge === undefined ? {} : { edge }),
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    }
+    const target = event.currentTarget
+    if (typeof target.setPointerCapture === 'function') {
+      try {
+        target.setPointerCapture(event.pointerId)
+      } catch {
+        // Pointer capture is an optimisation; drag state already tracks the id.
+      }
+    }
+  }
+
+  const dragWindow = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current
+    if (drag === undefined || drag.pointerId !== event.pointerId) return
+    const delta = { dx: event.clientX - drag.x, dy: event.clientY - drag.y }
+    drag.x = event.clientX
+    drag.y = event.clientY
+    setFrame((current) =>
+      drag.edge === undefined
+        ? moveWindowRect(current, delta, viewport())
+        : resizeWindowRect(current, drag.edge, delta, viewport()),
+    )
+  }
+
+  const endDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current
+    if (drag === undefined || drag.pointerId !== event.pointerId) return
+    dragRef.current = undefined
+    const target = event.currentTarget
+    if (typeof target.releasePointerCapture === 'function') {
+      try {
+        target.releasePointerCapture(event.pointerId)
+      } catch {
+        // Capture may already be gone with the pointer itself.
+      }
+    }
+  }
+
+  const dragHandlers = (edge?: SidecarWindowEdge) => ({
+    onPointerCancel: endDrag,
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => beginDrag(event, edge),
+    onPointerMove: dragWindow,
+    onPointerUp: endDrag,
+  })
+
+  /**
+   * The whole title bar drags the window, not just the grip. Controls keep their
+   * own behaviour: a press that starts on a button never turns into a drag.
+   */
+  const beginBarDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const target = event.target as Partial<Element> | null
+    if (typeof target?.closest === 'function' && target.closest('button') !== null) {
+      return
+    }
+    beginDrag(event)
+  }
+
+  const barDragHandlers = {
+    onPointerCancel: endDrag,
+    onPointerDown: beginBarDrag,
+    onPointerMove: dragWindow,
+    onPointerUp: endDrag,
+  }
+
+  const onHandleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const direction = KEY_DIRECTIONS[event.key]
+    if (direction === undefined) return
+    event.preventDefault()
+    const delta = {
+      dx: direction.dx * SIDECAR_WINDOW_KEYBOARD_STEP,
+      dy: direction.dy * SIDECAR_WINDOW_KEYBOARD_STEP,
+    }
+    setFrame((current) => {
+      if (!event.shiftKey) return nudgeWindowRect(current, direction, viewport())
+      const edge: SidecarWindowEdge = direction.dx !== 0 ? 'e' : 's'
+      return resizeWindowRect(current, edge, delta, viewport())
+    })
+  }
+
   if (state.status === 'closed') return null
 
+  const frameStyle = {
+    '--dsh-sidecar-window-height': `${frame.height}px`,
+    '--dsh-sidecar-window-left': `${frame.left}px`,
+    '--dsh-sidecar-window-top': `${frame.top}px`,
+    '--dsh-sidecar-window-width': `${frame.width}px`,
+  } as CSSProperties
+
   return (
-    <aside aria-label={t('drawer.aria')} className={styles.drawer}>
-      <header className={styles.header}>
+    <aside
+      aria-label={t('drawer.aria')}
+      className={styles.drawer}
+      style={frameStyle}
+    >
+      {SIDECAR_WINDOW_EDGES.map((edge) => (
+        <span
+          aria-hidden="true"
+          className={`${styles.windowResize} ${styles.windowResizeEdge(edge)}`}
+          key={edge}
+          {...dragHandlers(edge)}
+        />
+      ))}
+      <header className={styles.header} {...barDragHandlers}>
+        <button
+          aria-label={t('window.drag')}
+          className={styles.windowHandle}
+          onKeyDown={onHandleKeyDown}
+          title={t('window.dragTitle')}
+          type="button"
+          {...dragHandlers()}
+        >
+          <span aria-hidden="true">⠿</span>
+        </button>
         <div>
           <strong>{t('drawer.title')}</strong>
           <small>{t('drawer.subtitle')}</small>
         </div>
-        <button aria-label={t('drawer.close')} onClick={() => void controller.close()} type="button">
+        <button
+          className={styles.windowReset}
+          onClick={() => setFrame(defaultWindowRect(viewport()))}
+          title={t('window.resetTitle')}
+          type="button"
+        >
+          {t('window.reset')}
+        </button>
+        <button
+          aria-label={t('drawer.close')}
+          className={styles.close}
+          onClick={() => void controller.close()}
+          type="button"
+        >
           ×
         </button>
       </header>
@@ -108,8 +295,7 @@ export function SidecarDrawer({
         </p>
       ) : null}
       {state.status === 'open' &&
-      state.childId !== undefined &&
-      state.branchIds !== undefined ? (
+      state.childId !== undefined ? (
         <div className={styles.branches}>
           {renaming ? (
             <form className={styles.branchEditor} onSubmit={saveRename}>
@@ -144,22 +330,6 @@ export function SidecarDrawer({
             </div>
           ) : (
             <>
-              <select
-                aria-label={t('branch.label')}
-                onChange={(event) => {
-                  void controller
-                    .selectBranch(event.currentTarget.value)
-                    .catch(() => undefined)
-                }}
-                value={state.childId}
-              >
-                {state.branchIds.map((branchId, index) => (
-                  <option key={branchId} value={branchId}>
-                    {sessions.byId[branchId as SessionId]?.displayTitle ??
-                      t('branch.fallback', { number: index + 1 })}
-                  </option>
-                ))}
-              </select>
               <button
                 aria-label={t('branch.renameAria')}
                 onClick={() => {
@@ -169,15 +339,6 @@ export function SidecarDrawer({
                 type="button"
               >
                 {t('branch.rename')}
-              </button>
-              <button
-                aria-label={t('branch.newAria')}
-                onClick={() =>
-                  void controller.createBranch().catch(() => undefined)
-                }
-                type="button"
-              >
-                {t('branch.new')}
               </button>
               <button
                 aria-label={t('branch.archiveAria')}
@@ -214,14 +375,14 @@ export function SidecarDrawer({
       {state.status === 'open' &&
       state.turnEndSeq !== undefined ? (
         <ChildProjectionSurface
-          afterSeq={state.turnEndSeq}
+          afterSeq={state.childAfterSeq ?? state.turnEndSeq}
           {...(state.childId === undefined
             ? {}
             : { childSessionId: state.childId })}
           {...(state.excerpt === undefined ? {} : { excerpt: state.excerpt })}
           gateway={gateway}
           history={history}
-          key={state.childId ?? state.anchorKey}
+          key={state.anchorKey ?? state.childId}
           prompt={(text) => controller.prompt(text)}
           running={running}
           t={t}

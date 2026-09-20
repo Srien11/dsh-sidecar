@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createAnchorRpcHandler } from '../src/host/anchor-rpc.js'
 
 const anchor = {
+  excerpt: 'selected context',
   hidden: true as const,
   parentSessionId: 'parent',
   seedLength: 11,
@@ -14,6 +15,7 @@ describe('sidecar anchor RPC', () => {
     const records = new Map<string, typeof anchor>()
     const table = {
       delete: vi.fn(async (key: string) => records.delete(key)),
+      entries: vi.fn(() => records.entries()),
       get: vi.fn((key: string) => records.get(key)),
       put: vi.fn(async (key: string, value: typeof anchor) => {
         records.set(key, value)
@@ -29,6 +31,12 @@ describe('sidecar anchor RPC', () => {
       handle('anchors/get', { childSessionId: 'child' }, signal),
     ).resolves.toEqual({ ok: true, value: anchor })
     await expect(
+      handle('anchors/list', { parentSessionId: 'parent' }, signal),
+    ).resolves.toEqual({
+      ok: true,
+      value: [{ anchor, childSessionId: 'child' }],
+    })
+    await expect(
       handle('anchors/remove', { childSessionId: 'child' }, signal),
     ).resolves.toEqual({ ok: true, value: null })
     await expect(
@@ -39,6 +47,7 @@ describe('sidecar anchor RPC', () => {
   it('rejects malformed payloads without echoing their values', async () => {
     const handle = createAnchorRpcHandler({
       delete: vi.fn(),
+      entries: vi.fn(() => new Map<string, typeof anchor>().entries()),
       get: vi.fn(),
       put: vi.fn(),
     })

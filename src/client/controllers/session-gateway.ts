@@ -2,13 +2,16 @@ import type {
   IApiClient,
   RpcError,
   SessionId,
+  WorkspaceId,
 } from '@deepseek-ai/dsh-client-connection/client'
 import type {
   ISessions,
+  IWorkspaces,
   SessionFace,
 } from '@deepseek-ai/dsh-client-runtime/client'
 
 export interface SidecarSessionGateway {
+  createIndependent(parentSessionId: string): Promise<{ childId: string }>
   fork(input: { sessionId: string; atSeq: number }): Promise<{ childId: string }>
   openChildSurface(childId: string): Promise<void>
   closeChildSurface(childId: string): Promise<void>
@@ -21,29 +24,88 @@ function rpcError(operation: string, error: RpcError): Error {
   return new Error(`${operation} failed: ${error.code}: ${error.message}`)
 }
 
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+/**
+ * Harness can create the fork successfully and then fail while attaching it
+ * to the workspace. The structured error still carries the durable child id;
+ * treating that case as an unknown outcome would create another copy on retry.
+ */
+function publishedForkChildId(error: unknown): string | undefined {
+  const rpc = record(record(error)?.rpcError)
+  if (rpc?.code !== 'workspace-attach-failed') return undefined
+  const sessionId = record(rpc.details)?.sessionId
+  return typeof sessionId === 'string' && sessionId.length > 0
+    ? sessionId
+    : undefined
+}
+
+const ADDRESSABILITY_RETRY_DELAYS_MS = [0, 50, 100, 200, 400, 800] as const
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
 /** Public-API adapter selected by ADR 0001 route A2. */
 export class HarnessSessionGateway implements SidecarSessionGateway {
   constructor(
     private readonly sessions: ISessions,
     private readonly api: IApiClient,
+    private readonly workspaces?: IWorkspaces,
   ) {}
 
-  async fork(input: { sessionId: string; atSeq: number }): Promise<{ childId: string }> {
-    const childId = await this.sessions.fork({
-      atSeq: input.atSeq,
-      increaseTitle: false,
-      sessionId: input.sessionId as SessionId,
-    })
+  async createIndependent(parentSessionId: string): Promise<{ childId: string }> {
+    if (this.workspaces === undefined) {
+      throw new Error('Creating an independent sidecar requires Workspaces')
+    }
+    const workspace = this.workspaces.list
+      .getSnapshot()
+      .items.find((item) => item.sessionIds.includes(parentSessionId as SessionId))
+    if (workspace === undefined) {
+      throw new Error(`Parent session has no workspace: ${parentSessionId}`)
+    }
+    const childId = await this.workspaces.connectWorkspace(
+      workspace.workspaceId as WorkspaceId,
+    )
+    if (childId === parentSessionId) {
+      throw new Error('Workspace returned the active parent instead of a blank session')
+    }
     return { childId }
+  }
+
+  async fork(input: { sessionId: string; atSeq: number }): Promise<{ childId: string }> {
+    try {
+      const childId = await this.sessions.fork({
+        atSeq: input.atSeq,
+        increaseTitle: false,
+        sessionId: input.sessionId as SessionId,
+      })
+      return { childId }
+    } catch (error) {
+      const childId = publishedForkChildId(error)
+      if (childId !== undefined) return { childId }
+      throw error
+    }
   }
 
   async openChildSurface(childId: string): Promise<void> {
     // Addressability probe only. It deliberately does not call sessions.open().
-    const response = await this.api.sessions.history({
-      maxMessages: 1,
-      sessionId: childId as SessionId,
-    })
-    if (!response.result.ok) throw rpcError('Opening sidecar', response.result.error)
+    // A just-created fork may take a short moment to become history-readable.
+    let failure: RpcError | undefined
+    for (const delay of ADDRESSABILITY_RETRY_DELAYS_MS) {
+      if (delay > 0) await wait(delay)
+      const response = await this.api.sessions.history({
+        maxMessages: 1,
+        sessionId: childId as SessionId,
+      })
+      if (response.result.ok) return
+      failure = response.result.error
+    }
+    if (failure !== undefined) throw rpcError('Opening sidecar', failure)
   }
 
   async closeChildSurface(_childId: string): Promise<void> {

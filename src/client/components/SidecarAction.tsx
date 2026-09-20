@@ -9,11 +9,21 @@ import type {
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 
-import type { SidecarUiController } from '../controllers/sidecar-controller.js'
+import {
+  applyAnswerHighlights,
+  clearAnswerHighlights,
+  type AnswerHighlightTarget,
+} from '../answer-highlight.js'
+import type {
+  SidecarBranchInfo,
+  SidecarUiController,
+} from '../controllers/sidecar-controller.js'
 import { SIDECAR_LOCALE_NAMESPACE } from '../locales.js'
 import {
+  assistantAnswerForAction,
   selectionSnapshotWithin,
   selectionTextWithin,
+  selectionWithin,
 } from '../controllers/selection.js'
 import { styles } from '../styles.js'
 
@@ -32,8 +42,25 @@ interface AnswerBoundary {
 
 interface FloatingSelection {
   left: number
+  offset?: number
   text: string
   top: number
+}
+
+interface OpenRequest {
+  branchId?: string
+  excerpt?: string
+  excerptOffset?: number
+  returnFocus: HTMLElement
+}
+
+const OPTION_LABEL_LIMIT = 64
+
+function truncate(text: string, limit = OPTION_LABEL_LIMIT): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim()
+  return collapsed.length <= limit
+    ? collapsed
+    : `${collapsed.slice(0, limit - 1)}…`
 }
 
 function floatingPosition(rect: DOMRect): Pick<FloatingSelection, 'left' | 'top'> {
@@ -89,19 +116,25 @@ export function SidecarAction({
     controller.getSnapshot,
     controller.getSnapshot,
   )
-  const [count, setCount] = useState(0)
+  const [branches, setBranches] = useState<readonly SidecarBranchInfo[]>([])
   const [floating, setFloating] = useState<FloatingSelection>()
   const actionRef = useRef<HTMLButtonElement>(null)
-  const pointerExcerpt = useRef<string>()
+  const pointerSelection = useRef<{ offset?: number; text: string }>()
+  const highlightRef = useRef<{
+    activate: (childId: string, element: HTMLElement) => void
+    describe: (target: AnswerHighlightTarget) => string
+    targets: readonly AnswerHighlightTarget[]
+  }>({ activate: () => undefined, describe: () => '', targets: [] })
+  const syncHighlights = useRef<() => void>(() => undefined)
 
   useEffect(() => {
     let live = true
     if (boundary === undefined) return () => undefined
 
     void controller
-      .branchCount(sessionId, boundary.turnEndSeq)
+      .branches(sessionId, boundary.turnEndSeq)
       .then((next) => {
-        if (live) setCount(next)
+        if (live) setBranches(next)
       })
       .catch(() => undefined)
     return () => {
@@ -124,12 +157,17 @@ export function SidecarAction({
       setFloating((current) => {
         if (
           current?.text === snapshot.text &&
+          current.offset === snapshot.offset &&
           current.left === position.left &&
           current.top === position.top
         ) {
           return current
         }
-        return { ...position, text: snapshot.text }
+        return {
+          ...position,
+          ...(snapshot.offset === undefined ? {} : { offset: snapshot.offset }),
+          text: snapshot.text,
+        }
       })
     }
     const schedule = () => {
@@ -156,25 +194,132 @@ export function SidecarAction({
     }
   }, [])
 
-  if (boundary === undefined) return null
+  const labelOf = (branch: SidecarBranchInfo, index: number): string => {
+    if (branch.summary !== undefined) return branch.summary
+    if (branch.title !== undefined) return branch.title
+    if (branch.excerpt !== undefined) return branch.excerpt
+    return t('branch.followUp', { number: index + 1 })
+  }
+  const labels = new Map(
+    branches.map((branch, index) => [branch.childId, labelOf(branch, index)]),
+  )
+  const highlightTargets: readonly AnswerHighlightTarget[] = branches.flatMap(
+    (branch) =>
+      branch.excerpt === undefined
+        ? []
+        : [
+            {
+              childId: branch.childId,
+              excerpt: branch.excerpt,
+              ...(branch.excerptOffset === undefined
+                ? {}
+                : { excerptOffset: branch.excerptOffset }),
+            },
+          ],
+  )
 
-  const key = `${sessionId}:${boundary.turnEndSeq}`
-  const busy = state.status === 'opening' && state.anchorKey === key
-  const label = t(busy ? 'action.opening' : 'action.ask')
-
-  const open = (returnFocus: HTMLElement, excerpt?: string) => {
-    controller.rememberReturnFocus(returnFocus)
-    pointerExcerpt.current = undefined
+  const open = (request: OpenRequest) => {
+    if (boundary === undefined) return
+    controller.rememberReturnFocus(request.returnFocus)
+    pointerSelection.current = undefined
     setFloating(undefined)
     void controller
       .open({
-        ...(excerpt === undefined ? {} : { excerpt }),
+        ...(request.branchId === undefined
+          ? { fresh: true as const }
+          : { branchId: request.branchId }),
+        ...(request.excerpt === undefined ? {} : { excerpt: request.excerpt }),
+        ...(request.excerptOffset === undefined
+          ? {}
+          : { excerptOffset: request.excerptOffset }),
         parentId: sessionId,
         seedLength: boundary.seedLength,
         turnEndSeq: boundary.turnEndSeq,
       })
       .catch(() => undefined)
   }
+
+  useEffect(() => {
+    highlightRef.current = {
+      activate: (childId: string, element: HTMLElement) => {
+        open({ branchId: childId, returnFocus: element })
+      },
+      describe: (target: AnswerHighlightTarget) => {
+        const summary = labels.get(target.childId)
+        return summary === undefined
+          ? t('highlight.openFallback')
+          : t('highlight.open', { summary: truncate(summary, 48) })
+      },
+      targets: highlightTargets,
+    }
+    syncHighlights.current()
+  })
+
+  useEffect(() => {
+    const action = actionRef.current
+    if (action === null || boundary === undefined) return () => undefined
+
+    const answer = assistantAnswerForAction(action)
+    if (answer === undefined) return () => undefined
+
+    let frame: number | undefined
+    const sync = () => {
+      frame = undefined
+      const current = highlightRef.current
+      applyAnswerHighlights(answer, current.targets, {
+        activate: (childId, element) => current.activate(childId, element),
+        describe: (target) => current.describe(target),
+      })
+    }
+    const schedule = () => {
+      if (frame !== undefined) return
+      frame = window.requestAnimationFrame?.(sync) ?? window.setTimeout(sync, 0)
+    }
+    syncHighlights.current = sync
+
+    // Re-apply when the Host re-renders the answer and drops injected marks.
+    const observer = new MutationObserver(schedule)
+    observer.observe(answer, { childList: true, subtree: true })
+    const onResize = () => schedule()
+    window.addEventListener('resize', onResize)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', onResize)
+      if (syncHighlights.current === sync) syncHighlights.current = () => undefined
+      if (frame !== undefined) {
+        if (window.cancelAnimationFrame === undefined) window.clearTimeout(frame)
+        else window.cancelAnimationFrame(frame)
+      }
+      clearAnswerHighlights(answer)
+    }
+  }, [boundary?.turnEndSeq, sessionId])
+
+  if (boundary === undefined) return null
+
+  const key = `${sessionId}:${boundary.turnEndSeq}`
+  const busy =
+    state.status === 'opening' &&
+    (state.anchorKey === key ||
+      state.anchorKey?.startsWith(`${key}:draft:`) === true ||
+      state.anchorKey?.startsWith(`${key}:branch:`) === true)
+  const activeBranchId =
+    state.status !== 'closed' &&
+    state.parentId === sessionId &&
+    state.turnEndSeq === boundary.turnEndSeq &&
+    state.childId !== undefined &&
+    branches.some((branch) => branch.childId === state.childId)
+      ? state.childId
+      : ''
+  const label = t(busy ? 'action.opening' : 'action.ask')
+  const latest = branches[0]
+  const existingLabel =
+    latest === undefined
+      ? t('branch.existingCount', { count: branches.length })
+      : t('branch.latest', {
+          count: branches.length,
+          summary: truncate(labelOf(latest, 0), 40),
+        })
 
   return (
     <>
@@ -184,12 +329,28 @@ export function SidecarAction({
         className={styles.action}
         disabled={busy}
         onClick={(event) => {
+          const captured = pointerSelection.current
           const excerpt =
-            pointerExcerpt.current ?? selectionTextWithin(event.currentTarget)
-          open(event.currentTarget, excerpt)
+            captured?.text ?? selectionTextWithin(event.currentTarget)
+          open({
+            ...(captured?.offset === undefined
+              ? {}
+              : { excerptOffset: captured.offset }),
+            ...(excerpt === undefined ? {} : { excerpt }),
+            returnFocus: event.currentTarget,
+          })
         }}
         onPointerDown={(event) => {
-          pointerExcerpt.current = selectionTextWithin(event.currentTarget)
+          const captured = selectionWithin(event.currentTarget)
+          pointerSelection.current =
+            captured === undefined
+              ? undefined
+              : {
+                  ...(captured.offset === undefined
+                    ? {}
+                    : { offset: captured.offset }),
+                  text: captured.text,
+                }
         }}
         ref={actionRef}
         title={t(busy ? 'action.openingTitle' : 'action.title')}
@@ -197,8 +358,37 @@ export function SidecarAction({
       >
         <span aria-hidden="true">↗</span>
         <span>{label}</span>
-        {count > 0 ? <span className={styles.count}>{count}</span> : null}
       </button>
+      {branches.length === 0 ? null : (
+        <select
+          aria-label={t('branch.existing')}
+          className={`${styles.branchRestore}${
+            activeBranchId === '' ? '' : ` ${styles.branchRestoreActive}`
+          }`}
+          disabled={busy}
+          onChange={(event) => {
+            const branchId = event.currentTarget.value
+            if (branchId !== '') {
+              open({ branchId, returnFocus: event.currentTarget })
+            }
+          }}
+          value={activeBranchId}
+        >
+          <option value="">{existingLabel}</option>
+          {branches.map((branch, index) => (
+            <option
+              aria-current={branch.childId === activeBranchId ? 'true' : undefined}
+              key={branch.childId}
+              title={t('branch.optionTitle', {
+                summary: labelOf(branch, index),
+              })}
+              value={branch.childId}
+            >
+              {truncate(labelOf(branch, index))}
+            </option>
+          ))}
+        </select>
+      )}
       {floating === undefined
         ? null
         : createPortal(
@@ -207,16 +397,27 @@ export function SidecarAction({
               className={styles.selectionAction}
               disabled={busy}
               onClick={(event) => {
-                const excerpt = pointerExcerpt.current ?? floating.text
+                const captured = pointerSelection.current
+                const excerpt = captured?.text ?? floating.text
                 window.getSelection()?.removeAllRanges()
-                open(
-                  actionRef.current ?? event.currentTarget,
+                open({
+                  ...(captured?.offset === undefined
+                    ? floating.offset === undefined
+                      ? {}
+                      : { excerptOffset: floating.offset }
+                    : { excerptOffset: captured.offset }),
                   excerpt,
-                )
+                  returnFocus: actionRef.current ?? event.currentTarget,
+                })
               }}
               onPointerDown={(event) => {
                 event.preventDefault()
-                pointerExcerpt.current = floating.text
+                pointerSelection.current = {
+                  ...(floating.offset === undefined
+                    ? {}
+                    : { offset: floating.offset }),
+                  text: floating.text,
+                }
               }}
               style={{
                 left: `${floating.left}px`,

@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 
 import { SidecarAction } from './components/SidecarAction.js'
 import { SidecarDrawer } from './components/SidecarDrawer.js'
+import { StreamingSidecarAction } from './components/StreamingSidecarAction.js'
 import { ForkController } from './controllers/fork-controller.js'
 import { HarnessHistorySource } from './controllers/harness-history-source.js'
 import { PersistentAnchorRepository } from './controllers/persistent-anchor-repository.js'
@@ -29,7 +30,11 @@ export function apply(ctx: ClientContext): void {
 
   const history = new HarnessHistorySource(ctx.sessions, connection.api)
   const anchors = new PersistentAnchorRepository(connection.rpc)
-  const gateway = new HarnessSessionGateway(ctx.sessions, connection.api)
+  const gateway = new HarnessSessionGateway(
+    ctx.sessions,
+    connection.api,
+    ctx.workspaces,
+  )
   const forks = new ForkController(gateway, anchors)
   const controller = new SidecarController(
     forks,
@@ -62,6 +67,19 @@ export function apply(ctx: ClientContext): void {
         order: 20,
       },
       SidecarAction,
+    ),
+  )
+
+  ctx.slots.inject('conversation.input.right', () =>
+    ctx.slots.register(
+      {
+        id: 'sidecar-streaming',
+        inject: () => ({ controller }),
+        locale: SIDECAR_LOCALE_NAMESPACE,
+        name: 'conversation.input.right',
+        order: 20,
+      },
+      StreamingSidecarAction,
     ),
   )
 

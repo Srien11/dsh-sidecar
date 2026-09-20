@@ -8,7 +8,18 @@ export interface SidecarSessionSummary {
 }
 
 export interface SidecarAnchor {
+  excerpt?: string | undefined
+  /**
+   * Character offset of `excerpt` inside the rendered Assistant answer text at
+   * creation time. Lets the tail highlight the exact occurrence the user asked
+   * about instead of the first equal-looking one.
+   */
+  excerptOffset?: number | undefined
+  mode?: 'fork' | 'snapshot' | undefined
   parentSessionId: string
+  sourceTurn?: number | undefined
+  /** First question asked in this follow-up, shown as its summary. */
+  summary?: string | undefined
   turnEndSeq: number
   seedLength: number
   hidden?: true | undefined

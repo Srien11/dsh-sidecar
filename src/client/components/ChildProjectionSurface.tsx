@@ -15,8 +15,13 @@ import type { SidecarTranscriptMessage } from '../controllers/transcript.js'
 import type { SidecarTranslate } from '../locales.js'
 import { styles } from '../styles.js'
 
-const ACTIVE_POLL_MS = 850
+const ACTIVE_POLL_MS = 250
 const IDLE_POLL_MS = 5_000
+
+interface HistoryProjection {
+  latestTurnEndSeq: number
+  messages: readonly SidecarTranscriptMessage[]
+}
 
 export interface ChildProjectionSurfaceProps {
   afterSeq: number
@@ -39,17 +44,23 @@ export function ChildProjectionSurface({
   running,
   t,
 }: ChildProjectionSurfaceProps) {
-  const [draft, setDraft] = useState(() => excerptDraft(excerpt, t('excerpt.prompt')))
+  const [draft, setDraft] = useState('')
   const [error, setError] = useState<string>()
   const [messages, setMessages] = useState<readonly SidecarTranscriptMessage[]>([])
+  const [awaitingResponse, setAwaitingResponse] = useState(false)
   const [sending, setSending] = useState(false)
   const activeKey = `${childSessionId ?? 'pending'}:${afterSeq}`
   const activeKeyRef = useRef(activeKey)
   const historyRequestRef = useRef<{
     key: string
-    promise: Promise<readonly SidecarTranscriptMessage[]>
+    promise: Promise<HistoryProjection>
   }>()
+  const awaitedTurnEndAfterRef = useRef<number>()
+  const latestTurnEndSeqRef = useRef(afterSeq)
   const mountedRef = useRef(true)
+  const pendingExcerptRef = useRef(
+    childSessionId === undefined ? excerpt : undefined,
+  )
   const runningRef = useRef(running)
   const sendingRef = useRef(false)
   activeKeyRef.current = activeKey
@@ -63,13 +74,20 @@ export function ChildProjectionSurface({
   }, [])
 
   const readTranscript = useCallback(() => {
-    if (childSessionId === undefined) return Promise.resolve([])
+    if (childSessionId === undefined) {
+      return Promise.resolve({ latestTurnEndSeq: afterSeq, messages: [] })
+    }
     const current = historyRequestRef.current
     if (current?.key === activeKey) return current.promise
 
-    const promise = history
-      .history(childSessionId)
-      .then((events) => buildTranscript(events, afterSeq))
+    const promise = history.history(childSessionId).then((events) => ({
+      latestTurnEndSeq: events.reduce(
+        (latest, event) =>
+          event.type === 'turn/end' && event.seq > latest ? event.seq : latest,
+        afterSeq,
+      ),
+      messages: buildTranscript(events, afterSeq),
+    }))
     const request = { key: activeKey, promise }
     historyRequestRef.current = request
     void promise.then(
@@ -84,9 +102,18 @@ export function ChildProjectionSurface({
   }, [activeKey, afterSeq, childSessionId, history])
 
   const refresh = useCallback(async () => {
-    const nextMessages = await readTranscript()
+    const projection = await readTranscript()
     if (mountedRef.current && activeKeyRef.current === activeKey) {
-      setMessages(nextMessages)
+      latestTurnEndSeqRef.current = projection.latestTurnEndSeq
+      setMessages(projection.messages)
+      const awaitedAfter = awaitedTurnEndAfterRef.current
+      if (
+        awaitedAfter !== undefined &&
+        projection.latestTurnEndSeq > awaitedAfter
+      ) {
+        awaitedTurnEndAfterRef.current = undefined
+        setAwaitingResponse(false)
+      }
     }
   }, [activeKey, readTranscript])
 
@@ -106,7 +133,9 @@ export function ChildProjectionSurface({
         if (live) {
           timer = window.setTimeout(
             () => void poll(),
-            runningRef.current ? ACTIVE_POLL_MS : IDLE_POLL_MS,
+            awaitingResponse || runningRef.current
+              ? ACTIVE_POLL_MS
+              : IDLE_POLL_MS,
           )
         }
       }
@@ -116,7 +145,7 @@ export function ChildProjectionSurface({
       live = false
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [childSessionId, refresh])
+  }, [awaitingResponse, childSessionId, refresh, running])
 
   const sendDraft = useCallback(async () => {
     const text = draft.trim()
@@ -126,13 +155,25 @@ export function ChildProjectionSurface({
     setSending(true)
     setError(undefined)
     try {
+      if (childSessionId !== undefined) {
+        try {
+          await refresh()
+        } catch {
+          // A stale history read must not block a valid prompt submission.
+        }
+      }
+      const turnEndBaseline = latestTurnEndSeqRef.current
+      const outgoing = promptWithSelectedContext(text, pendingExcerptRef.current)
       if (prompt !== undefined) {
-        await prompt(text)
+        await prompt(outgoing)
       } else if (childSessionId !== undefined) {
-        await gateway.prompt(childSessionId, text)
+        await gateway.prompt(childSessionId, outgoing)
       } else {
         throw new Error('No sidecar prompt target')
       }
+      awaitedTurnEndAfterRef.current = turnEndBaseline
+      setAwaitingResponse(true)
+      pendingExcerptRef.current = undefined
       setDraft('')
       await refresh()
     } catch (nextError) {
@@ -161,7 +202,7 @@ export function ChildProjectionSurface({
       )}
       <p className={styles.contextNote}>{t('composer.context')}</p>
       <div aria-live="polite" className={styles.transcript}>
-        {messages.length === 0 ? (
+        {messages.length === 0 && !awaitingResponse && !running ? (
           <p className={styles.empty}>{t('composer.empty')}</p>
         ) : (
           messages.map((message) => (
@@ -188,6 +229,12 @@ export function ChildProjectionSurface({
             </article>
           ))
         )}
+        {awaitingResponse || running ? (
+          <div className={styles.responding} role="status">
+            <span aria-hidden="true" className={styles.respondingDot} />
+            <span>{t('composer.responding')}</span>
+          </div>
+        ) : null}
       </div>
       {error === undefined ? null : (
         <p className={styles.error} role="alert">
@@ -222,15 +269,16 @@ export function ChildProjectionSurface({
   )
 }
 
-export function excerptDraft(
+export function promptWithSelectedContext(
+  prompt: string,
   excerpt: string | undefined,
-  prompt = '针对以下选中片段：',
 ): string {
-  if (excerpt === undefined) return ''
-  const quoted = excerpt
-    .replaceAll('\r\n', '\n')
-    .split('\n')
-    .map((line) => `> ${line}`)
-    .join('\n')
-  return `${prompt}\n\n${quoted}\n\n`
+  if (excerpt === undefined) return prompt
+  return [
+    '<dsh-sidecar-selected-context>',
+    excerpt.replaceAll('\r\n', '\n'),
+    '</dsh-sidecar-selected-context>',
+    '',
+    prompt,
+  ].join('\n')
 }

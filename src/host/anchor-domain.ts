@@ -3,9 +3,14 @@ import { z } from 'zod'
 
 export const sidecarAnchorSchema = z
   .object({
+    excerpt: z.string().min(1).optional(),
+    excerptOffset: z.number().int().nonnegative().optional(),
     hidden: z.literal(true).optional(),
+    mode: z.enum(['fork', 'snapshot']).optional(),
     parentSessionId: z.string().min(1),
     seedLength: z.number().int().nonnegative(),
+    sourceTurn: z.number().int().nonnegative().optional(),
+    summary: z.string().min(1).optional(),
     turnEndSeq: z.number().int().nonnegative(),
   })
   .strict()

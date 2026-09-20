@@ -21,16 +21,10 @@ function select(element: Element): Selection | null {
 
 describe('selectionTextWithin', () => {
   it('returns the exact selection and its viewport rectangle', () => {
-    document.body.innerHTML = `
-      <section data-chat-flow>
-        <div data-chat-flow-kind="assistant-step">
-          <pre id="selected"></pre>
-        </div>
-        <div data-chat-flow-kind="turn-tail">
-          <button id="action">追问</button>
-        </div>
-      </section>
-    `
+    document.body.innerHTML =
+      '<section data-chat-flow><div data-chat-flow-kind="assistant-step">' +
+      '<pre id="selected"></pre></div><div data-chat-flow-kind="turn-tail">' +
+      '<button id="action">追问</button></div></section>'
     const selected = document.querySelector('#selected') as Element
     const action = document.querySelector('#action') as Element
     const exact = '结论：\nconst value = 1;\n'
@@ -42,7 +36,31 @@ describe('selectionTextWithin', () => {
       value: () => rect,
     })
 
-    expect(selectionSnapshotWithin(action, selection)).toEqual({ rect, text: exact })
+    expect(selectionSnapshotWithin(action, selection)).toEqual({
+      offset: 0,
+      rect,
+      text: exact,
+    })
+  })
+
+  it('records the character offset of a selection inside the answer', () => {
+    document.body.innerHTML =
+      '<section data-chat-flow><div data-chat-flow-kind="assistant-step">' +
+      '<p>前文<span id="selected">选中片段</span>后文</p>' +
+      '</div><div data-chat-flow-kind="turn-tail">' +
+      '<button id="action">追问</button></div></section>'
+    const selected = document.querySelector('#selected') as Element
+    const action = document.querySelector('#action') as Element
+    const selection = select(selected)
+    const range = selection?.getRangeAt(0)
+    Object.defineProperty(range, 'getBoundingClientRect', {
+      value: () => new DOMRect(10, 10, 10, 10),
+    })
+
+    expect(selectionSnapshotWithin(action, selection)).toMatchObject({
+      offset: 2,
+      text: '选中片段',
+    })
   })
 
   it('returns the exact selection from the assistant row owned by this action', () => {

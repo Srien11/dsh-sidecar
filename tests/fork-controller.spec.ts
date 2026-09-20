@@ -9,6 +9,7 @@ function harness() {
   const gateway: SidecarSessionGateway = {
     cancel: vi.fn(),
     closeChildSurface: vi.fn(),
+    createIndependent: vi.fn(),
     fork: vi.fn(
       () =>
         new Promise<{ childId: string }>((resolve) => {
@@ -48,27 +49,26 @@ describe('ForkController', () => {
       atSeq: 42,
       sessionId: 'parent',
     })
-    expect(test.gateway.openChildSurface).toHaveBeenCalledWith('child')
+    expect(test.gateway.openChildSurface).not.toHaveBeenCalled()
   })
 
-  it('records the anchor only after the child surface is addressable', async () => {
+  it('records the anchor immediately after the official fork returns', async () => {
     const test = harness()
     const order: string[] = []
-    vi.mocked(test.gateway.openChildSurface).mockImplementation(async () => {
-      order.push('addressable')
+    vi.mocked(test.gateway.fork).mockImplementation(async () => {
+      order.push('forked')
+      return { childId: 'child' }
     })
     vi.mocked(test.anchors.put).mockImplementation(async () => {
       order.push('recorded')
     })
-    const result = test.controller.open({
+    await test.controller.open({
       parentId: 'parent',
       seedLength: 43,
       turnEndSeq: 42,
     })
-    test.resolveFork()
-    await result
 
-    expect(order).toEqual(['addressable', 'recorded'])
+    expect(order).toEqual(['forked', 'recorded'])
     expect(test.anchors.put).toHaveBeenCalledWith('child', {
       hidden: true,
       parentSessionId: 'parent',
@@ -110,6 +110,7 @@ describe('ForkController', () => {
     const gateway: SidecarSessionGateway = {
       cancel: vi.fn(),
       closeChildSurface: vi.fn(),
+      createIndependent: vi.fn(),
       fork: vi.fn().mockRejectedValue(new Error('connection reset')),
       openChildSurface: vi.fn(),
       prompt: vi.fn(),
@@ -125,6 +126,40 @@ describe('ForkController', () => {
     await expect(
       controller.open({ parentId: 'parent', seedLength: 43, turnEndSeq: 42 }),
     ).rejects.toThrow('Check existing branches before retrying')
+    await expect(
+      controller.open({ parentId: 'parent', seedLength: 43, turnEndSeq: 42 }),
+    ).rejects.toThrow('Check existing branches before retrying')
     expect(gateway.fork).toHaveBeenCalledTimes(1)
+  })
+
+  it('resumes a known child when recording fails after the fork returned', async () => {
+    const gateway: SidecarSessionGateway = {
+      cancel: vi.fn(),
+      closeChildSurface: vi.fn(),
+      createIndependent: vi.fn(),
+      fork: vi.fn().mockResolvedValue({ childId: 'created-child' }),
+      openChildSurface: vi.fn(),
+      prompt: vi.fn(),
+      rename: vi.fn(),
+    }
+    const anchors: AnchorRepository = {
+      get: vi.fn(),
+      put: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('anchor storage is not ready'))
+        .mockResolvedValueOnce(undefined),
+      remove: vi.fn(),
+    }
+    const controller = new ForkController(gateway, anchors)
+    const input = { parentId: 'parent', seedLength: 43, turnEndSeq: 42 }
+
+    await expect(controller.open(input)).rejects.toThrow(
+      'anchor storage is not ready',
+    )
+    await expect(controller.open(input)).resolves.toBe('created-child')
+
+    expect(gateway.fork).toHaveBeenCalledTimes(1)
+    expect(gateway.openChildSurface).not.toHaveBeenCalled()
+    expect(anchors.put).toHaveBeenCalledTimes(2)
   })
 })

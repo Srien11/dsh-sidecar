@@ -42,10 +42,13 @@ function harness(excerpt?: string) {
   render(
     <ChildProjectionSurface
       afterSeq={10}
-      childSessionId="child"
+      {...(excerpt === undefined ? { childSessionId: 'child' } : {})}
       {...(excerpt === undefined ? {} : { excerpt })}
       gateway={gateway}
       history={history}
+      {...(excerpt === undefined
+        ? {}
+        : { prompt: (text: string) => gateway.prompt('child', text) })}
       running={false}
       t={t}
     />,
@@ -153,13 +156,147 @@ describe('ChildProjectionSurface composer', () => {
     expect(screen.queryByRole('heading', { name: '只是用户输入' })).toBeNull()
   })
 
-  it('shows and quotes the selected excerpt in the initial draft', () => {
+  it('shows the selected excerpt above an empty composer and sends it as context', async () => {
     const test = harness('第一行\n第二行')
 
     expect(screen.getByText(/第一行\s+第二行/)).toBeTruthy()
-    expect((test.textarea as HTMLTextAreaElement).value).toBe(
-      '针对以下选中片段：\n\n> 第一行\n> 第二行\n\n',
+    expect((test.textarea as HTMLTextAreaElement).value).toBe('')
+
+    fireEvent.change(test.textarea, { target: { value: '为什么？' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() =>
+      expect(test.gateway.prompt).toHaveBeenCalledWith(
+        'child',
+        [
+          '<dsh-sidecar-selected-context>',
+          '第一行',
+          '第二行',
+          '</dsh-sidecar-selected-context>',
+          '',
+          '为什么？',
+        ].join('\n'),
+      ),
     )
+  })
+
+  it('shows an immediate responding state after the prompt is accepted', async () => {
+    const test = harness()
+    fireEvent.change(test.textarea, { target: { value: '请回答' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    expect(await screen.findByText('AI 正在回复…')).toBeTruthy()
+  })
+
+  it('shows a restored excerpt without attaching it to later prompts again', async () => {
+    const gateway = {
+      cancel: vi.fn(),
+      closeChildSurface: vi.fn(),
+      fork: vi.fn(),
+      openChildSurface: vi.fn(),
+      prompt: vi.fn().mockResolvedValue(undefined),
+      rename: vi.fn(),
+    }
+    render(
+      <ChildProjectionSurface
+        afterSeq={10}
+        childSessionId="child"
+        excerpt="之前选中的原文"
+        gateway={gateway}
+        history={{ history: vi.fn().mockResolvedValue([]) }}
+        running={false}
+        t={t}
+      />,
+    )
+
+    fireEvent.change(screen.getByRole('textbox', { name: '侧边追问' }), {
+      target: { value: '继续解释' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() =>
+      expect(gateway.prompt).toHaveBeenCalledWith('child', '继续解释'),
+    )
+    expect(screen.getByText('之前选中的原文')).toBeTruthy()
+  })
+
+  it('polls rapidly while waiting for the active turn to finish', async () => {
+    vi.useFakeTimers()
+    const history: SidecarHistoryReader = {
+      history: vi.fn().mockResolvedValue([]),
+    }
+    const gateway = {
+      cancel: vi.fn(),
+      closeChildSurface: vi.fn(),
+      fork: vi.fn(),
+      openChildSurface: vi.fn(),
+      prompt: vi.fn().mockResolvedValue(undefined),
+      rename: vi.fn(),
+    }
+    render(
+      <ChildProjectionSurface
+        afterSeq={10}
+        childSessionId="child"
+        gateway={gateway}
+        history={history}
+        running={false}
+        t={t}
+      />,
+    )
+    fireEvent.change(screen.getByRole('textbox', { name: '侧边追问' }), {
+      target: { value: '请回答' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(vi.mocked(history.history).mock.calls.length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('renders growing assistant chunks during the active turn', async () => {
+    const firstChunk: SidecarHistoryEvent = {
+      data: {
+        chunk: { text: '第一', type: 'text-delta' },
+        step: 1,
+        turn: 2,
+      },
+      seq: 11,
+      type: 'assistant/chunk',
+    }
+    const secondChunk: SidecarHistoryEvent = {
+      data: {
+        chunk: { text: '段', type: 'text-delta' },
+        step: 1,
+        turn: 2,
+      },
+      seq: 12,
+      type: 'assistant/chunk',
+    }
+    const history: SidecarHistoryReader = {
+      history: vi
+        .fn()
+        .mockResolvedValueOnce([firstChunk])
+        .mockResolvedValue([firstChunk, secondChunk]),
+    }
+    render(
+      <ChildProjectionSurface
+        afterSeq={10}
+        childSessionId="child"
+        gateway={{
+          cancel: vi.fn(),
+          closeChildSurface: vi.fn(),
+          fork: vi.fn(),
+          openChildSurface: vi.fn(),
+          prompt: vi.fn(),
+          rename: vi.fn(),
+        }}
+        history={history}
+        running
+        t={t}
+      />,
+    )
+
+    expect(await screen.findByText('第一')).toBeTruthy()
+    expect(await screen.findByText('第一段', {}, { timeout: 1_000 })).toBeTruthy()
   })
 
   it('sends the trimmed draft when Enter is pressed', async () => {

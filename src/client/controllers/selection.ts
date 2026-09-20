@@ -1,6 +1,14 @@
+import { textOffsetOf } from '../dom-text.js'
+
 export interface AssistantSelectionSnapshot {
   rect: DOMRect
   text: string
+  /**
+   * Character offset of the selection start inside the rendered answer text.
+   * Persisted with the follow-up so its later highlight lands on the exact
+   * occurrence the user selected, not merely the first equal-looking one.
+   */
+  offset?: number
 }
 
 /** Find the Assistant row immediately owned by a turn-tail action. */
@@ -72,14 +80,48 @@ function visibleRect(range: Range): DOMRect | undefined {
   return undefined
 }
 
+/** Exact selection text plus its character offset inside the answer. */
+export interface AssistantSelection {
+  text: string
+  offset?: number
+}
+
+/**
+ * Read a selection without needing layout: usable from a pointer-down handler,
+ * where the browser may clear the selection before the click completes.
+ */
+export function selectionWithin(
+  action: Element,
+  selection: Selection | null = window.getSelection(),
+): AssistantSelection | undefined {
+  const text = selectionText(action, selection)
+  if (text === undefined || selection === null) return undefined
+
+  const answer = assistantAnswerForAction(action)
+  const range = selection.getRangeAt(0)
+  const offset =
+    answer === undefined
+      ? undefined
+      : textOffsetOf(answer, range.startContainer, range.startOffset)
+  return {
+    ...(offset === undefined ? {} : { offset }),
+    text,
+  }
+}
+
 /** Return exact selection text and viewport position for an inline action. */
 export function selectionSnapshotWithin(
   action: Element,
   selection: Selection | null = window.getSelection(),
 ): AssistantSelectionSnapshot | undefined {
-  const text = selectionText(action, selection)
-  if (text === undefined || selection === null) return undefined
+  const within = selectionWithin(action, selection)
+  if (within === undefined || selection === null) return undefined
 
   const rect = visibleRect(selection.getRangeAt(0))
-  return rect === undefined ? undefined : { rect, text }
+  if (rect === undefined) return undefined
+  return {
+    ...(within.offset === undefined ? {} : { offset: within.offset }),
+    rect,
+    text: within.text,
+  }
 }

@@ -29,6 +29,17 @@ function messageText(data: Record<string, unknown>): string {
   return textContent(data.content) || textContent(object(data.message)?.content)
 }
 
+/**
+ * Strip the prompt wrappers this plugin adds before sending (frozen history and
+ * selected context) so replays, summaries, and labels show only what the user
+ * actually typed.
+ */
+export function visibleUserText(text: string): string {
+  const frozenHistory = /^<dsh-sidecar-frozen-history>\r?\n[\s\S]*?\r?\n<\/dsh-sidecar-frozen-history>\r?\n(?:\r?\n)?用户追问：\r?\n/
+  const selectedContext = /^<dsh-sidecar-selected-context>\r?\n[\s\S]*?\r?\n<\/dsh-sidecar-selected-context>\r?\n(?:\r?\n)?/
+  return text.replace(frozenHistory, '').replace(selectedContext, '').trim()
+}
+
 function failureText(
   reason: Record<string, unknown>,
   failure: Record<string, unknown> | undefined,
@@ -55,7 +66,7 @@ export function buildTranscript(
     const data = object(event.data) ?? {}
 
     if (event.type === 'user/message') {
-      const text = messageText(data)
+      const text = visibleUserText(messageText(data))
       if (text !== '') {
         messages.push({ id: `user-${event.seq}`, role: 'user', seq: event.seq, text })
       }

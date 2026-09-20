@@ -1,10 +1,13 @@
 import { SidecarForkUncertainError } from '../../domain/errors.js'
-import type { SidecarAnchor } from '../../domain/types.js'
+import { sidecarAnchor } from '../../domain/anchor.js'
 import type { AnchorRepository } from '../../host/anchor-repository.js'
 import type { SidecarSessionGateway } from './session-gateway.js'
 
 export interface OpenSidecarInput {
+  excerpt?: string
+  excerptOffset?: number
   parentId: string
+  summary?: string
   turnEndSeq: number
   seedLength: number
   existingChildId?: string
@@ -12,6 +15,8 @@ export interface OpenSidecarInput {
 
 export class ForkController {
   private readonly inflight = new Map<string, Promise<string>>()
+  private readonly createdChildren = new Map<string, string>()
+  private readonly uncertain = new Map<string, SidecarForkUncertainError>()
 
   constructor(
     private readonly gateway: SidecarSessionGateway,
@@ -24,10 +29,12 @@ export class ForkController {
     }
 
     const key = `${input.parentId}:${input.turnEndSeq}`
+    const uncertain = this.uncertain.get(key)
+    if (uncertain !== undefined) return Promise.reject(uncertain)
     const existing = this.inflight.get(key)
     if (existing !== undefined) return existing
 
-    const operation = this.create(input)
+    const operation = this.create(key, input)
     this.inflight.set(key, operation)
     void operation.then(
       () => this.clear(key, operation),
@@ -41,25 +48,46 @@ export class ForkController {
     return childId
   }
 
-  private async create(input: OpenSidecarInput): Promise<string> {
-    try {
-      const { childId } = await this.gateway.fork({
-        atSeq: input.turnEndSeq,
-        sessionId: input.parentId,
-      })
-      await this.gateway.openChildSurface(childId)
+  private async create(key: string, input: OpenSidecarInput): Promise<string> {
+    let childId = this.createdChildren.get(key)
+    if (childId === undefined) {
+      try {
+        const forked = await this.gateway.fork({
+          atSeq: input.turnEndSeq,
+          sessionId: input.parentId,
+        })
+        childId = forked.childId
+        // From this point onward the outcome is known. Keep the id until every
+        // setup step succeeds so a retry resumes instead of copying again.
+        this.createdChildren.set(key, childId)
+      } catch (error) {
+        const uncertain =
+          error instanceof SidecarForkUncertainError
+            ? error
+            : new SidecarForkUncertainError()
+        this.uncertain.set(key, uncertain)
+        throw uncertain
+      }
+    }
 
-      const anchor: SidecarAnchor = {
-        hidden: true,
+    try {
+      const anchor = sidecarAnchor({
+        ...(input.excerpt === undefined ? {} : { excerpt: input.excerpt }),
+        ...(input.excerptOffset === undefined
+          ? {}
+          : { excerptOffset: input.excerptOffset }),
         parentSessionId: input.parentId,
         seedLength: input.seedLength,
+        ...(input.summary === undefined ? {} : { summary: input.summary }),
         turnEndSeq: input.turnEndSeq,
-      }
+      })
       await this.anchors.put(childId, anchor)
+      this.createdChildren.delete(key)
       return childId
     } catch (error) {
-      if (error instanceof SidecarForkUncertainError) throw error
-      throw new SidecarForkUncertainError()
+      // The child id is already durable and retained above. Surface the real
+      // setup error; the next attempt will resume this exact child.
+      throw error
     }
   }
 

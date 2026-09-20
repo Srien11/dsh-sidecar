@@ -66,6 +66,34 @@ describe('buildTranscript', () => {
     ])
   })
 
+  it('hides selected-context metadata from the visible user message', () => {
+    const events = [
+      event(11, 'user/message', {
+        content: [
+          {
+            type: 'text',
+            text: [
+              '<dsh-sidecar-selected-context>',
+              '不应出现在抽屉里的选中文字',
+              '</dsh-sidecar-selected-context>',
+              '',
+              '请解释原因',
+            ].join('\n'),
+          },
+        ],
+      }),
+    ]
+
+    expect(buildTranscript(events, 10)).toEqual([
+      {
+        id: 'user-11',
+        role: 'user',
+        seq: 11,
+        text: '请解释原因',
+      },
+    ])
+  })
+
   it('never projects reasoning deltas into the visible transcript', () => {
     const events = [
       event(12, 'assistant/chunk', {
@@ -189,5 +217,30 @@ describe('buildTranscript', () => {
       },
     ])
     expect(transcript[0]?.text).not.toContain('sk-secret-value')
+  })
+
+  it('hides the frozen main-history envelope from the child transcript', () => {
+    const events = [
+      event(1, 'user/message', {
+        content: [
+          {
+            type: 'text',
+            text: [
+              '<dsh-sidecar-frozen-history>',
+              '用户：原问题',
+              '助手（输出中）：快照回答',
+              '</dsh-sidecar-frozen-history>',
+              '',
+              '用户追问：',
+              '为什么？',
+            ].join('\n'),
+          },
+        ],
+      }),
+    ]
+
+    expect(buildTranscript(events, 0)).toEqual([
+      { id: 'user-1', role: 'user', seq: 1, text: '为什么？' },
+    ])
   })
 })

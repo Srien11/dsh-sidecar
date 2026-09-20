@@ -24,6 +24,7 @@ function harness(
   const gateway: SidecarSessionGateway = {
     cancel: vi.fn(),
     closeChildSurface: vi.fn().mockResolvedValue(undefined),
+    createIndependent: vi.fn().mockResolvedValue({ childId: 'snapshot-child' }),
     fork: vi.fn(),
     openChildSurface: vi.fn(),
     prompt: vi.fn(),
@@ -35,6 +36,7 @@ function harness(
     remove: vi.fn(),
   }
   const sessions = {
+    binding: vi.fn(),
     list: {
       getSnapshot: () => list,
     },
@@ -57,6 +59,7 @@ function harness(
     anchors,
     forks,
     gateway,
+    sessions,
     workspaces,
   }
 }
@@ -144,6 +147,91 @@ describe('SidecarController operation ordering', () => {
 })
 
 describe('SidecarController branch identity', () => {
+  it('opens every fresh follow-up as a separate pending drawer', async () => {
+    const test = harness(async () => 'new-child', {
+      byId: { existing: { parentId: 'parent', updatedAt: 10 } },
+      ids: ['existing'],
+    })
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      hidden: true,
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+
+    await test.controller.open({ ...input('parent', 10), fresh: true })
+
+    expect(test.forks.open).not.toHaveBeenCalled()
+    expect(test.controller.getSnapshot()).toMatchObject({
+      branchIds: [],
+      parentId: 'parent',
+      status: 'open',
+      turnEndSeq: 10,
+    })
+    expect(test.controller.getSnapshot().childId).toBeUndefined()
+    expect(test.controller.getSnapshot().anchorKey).toMatch(
+      /^parent:10:draft:\d+$/,
+    )
+  })
+
+  it('restores only the explicitly chosen follow-up in the drawer', async () => {
+    const test = harness(
+      async (request) => request.existingChildId ?? 'new-child',
+      {
+        byId: {
+          older: { parentId: 'parent', updatedAt: 10 },
+          recent: { parentId: 'parent', updatedAt: 20 },
+        },
+        ids: ['older', 'recent'],
+      },
+    )
+    vi.mocked(test.anchors.get).mockResolvedValue({
+      excerpt: '持久化的选中文字',
+      hidden: true,
+      parentSessionId: 'parent',
+      seedLength: 11,
+      turnEndSeq: 10,
+    })
+
+    await test.controller.open({ ...input('parent', 10), branchId: 'older' })
+
+    expect(test.forks.open).toHaveBeenCalledWith({
+      ...input('parent', 10),
+      existingChildId: 'older',
+    })
+    expect(test.controller.getSnapshot()).toMatchObject({
+      branchIds: ['older'],
+      childId: 'older',
+      excerpt: '持久化的选中文字',
+      status: 'open',
+    })
+  })
+
+  it('persists the selected excerpt with the newly created follow-up', async () => {
+    const test = harness(async () => 'child')
+    await test.controller.open({
+      ...input('parent', 10),
+      excerpt: '需要解释的原文',
+      fresh: true,
+    })
+
+    await test.controller.prompt('为什么？')
+
+    expect(test.anchors.put).toHaveBeenCalledWith('child', {
+      excerpt: '需要解释的原文',
+      hidden: true,
+      parentSessionId: 'parent',
+      seedLength: 11,
+      summary: '为什么？',
+      turnEndSeq: 10,
+    })
+    expect(test.controller.getSnapshot()).toMatchObject({
+      childId: 'child',
+      excerpt: '需要解释的原文',
+      status: 'open',
+    })
+  })
+
   it('opens a new anchor locally without creating a child session', async () => {
     const test = harness(async () => 'child')
 
@@ -174,13 +262,17 @@ describe('SidecarController branch identity', () => {
     await test.controller.prompt('继续追问')
 
     expect(test.forks.open).toHaveBeenCalledTimes(1)
-    expect(test.forks.open).toHaveBeenCalledWith(input('parent', 10))
+    expect(test.forks.open).toHaveBeenCalledWith({
+      ...input('parent', 10),
+      summary: '第一次追问',
+    })
     expect(test.gateway.prompt).toHaveBeenNthCalledWith(1, 'child', '第一次追问')
     expect(test.gateway.prompt).toHaveBeenNthCalledWith(2, 'child', '继续追问')
     expect(test.anchors.put).toHaveBeenCalledWith('child', {
       hidden: true,
       parentSessionId: 'parent',
       seedLength: 11,
+      summary: '第一次追问',
       turnEndSeq: 10,
     })
     expect(test.workspaces.archiveSession).toHaveBeenCalledWith('child')
@@ -324,7 +416,10 @@ describe('SidecarController branch identity', () => {
 
     await test.controller.prompt('新的追问')
 
-    expect(test.forks.open).toHaveBeenCalledWith(input('parent', 10))
+    expect(test.forks.open).toHaveBeenCalledWith({
+      ...input('parent', 10),
+      summary: '新的追问',
+    })
     expect(test.gateway.prompt).toHaveBeenCalledWith('new-child', '新的追问')
   })
 
@@ -439,5 +534,98 @@ describe('SidecarController branch identity', () => {
 
     expect(test.workspaces.archiveSession).toHaveBeenCalledWith('child')
     expect(test.controller.getSnapshot()).toEqual({ status: 'closed' })
+  })
+
+  it('creates and seeds an independent child from the frozen running history', async () => {
+    const test = harness(async () => 'native-fork')
+    const frozenHistory = [
+      '<dsh-sidecar-frozen-history>',
+      '用户：原问题',
+      '助手（输出中）：当前只输出到这里',
+      '</dsh-sidecar-frozen-history>',
+    ].join('\n')
+
+    await test.controller.open({
+      fresh: true,
+      frozenHistory,
+      mode: 'snapshot',
+      parentId: 'parent',
+      seedLength: 0,
+      sourceTurn: 3,
+      turnEndSeq: 7,
+    })
+    await test.controller.prompt('为什么？')
+    await test.controller.prompt('再展开一点')
+
+    expect(test.gateway.createIndependent).toHaveBeenCalledWith('parent')
+    expect(test.forks.open).not.toHaveBeenCalled()
+    expect(test.anchors.put).toHaveBeenCalledWith('snapshot-child', {
+      hidden: true,
+      mode: 'snapshot',
+      parentSessionId: 'parent',
+      seedLength: 0,
+      sourceTurn: 3,
+      summary: '为什么？',
+      turnEndSeq: 7,
+    })
+    expect(test.workspaces.archiveSession).toHaveBeenCalledWith('snapshot-child')
+    expect(test.gateway.prompt).toHaveBeenNthCalledWith(
+      1,
+      'snapshot-child',
+      `${frozenHistory}\n\n用户追问：\n为什么？`,
+    )
+    expect(test.gateway.prompt).toHaveBeenNthCalledWith(
+      2,
+      'snapshot-child',
+      '再展开一点',
+    )
+    expect(test.controller.getSnapshot()).toMatchObject({
+      childAfterSeq: 0,
+      childId: 'snapshot-child',
+      mode: 'snapshot',
+      snapshotSeedPending: false,
+      status: 'open',
+    })
+  })
+
+  it('restores a snapshot child under the answer after that turn settles', async () => {
+    const test = harness(
+      async (request) => request.existingChildId ?? 'native-fork',
+      {
+        byId: { 'snapshot-child': { updatedAt: 30 } },
+        ids: ['snapshot-child'],
+      },
+      ['snapshot-child'],
+    )
+    const snapshotAnchor = {
+      hidden: true as const,
+      mode: 'snapshot' as const,
+      parentSessionId: 'parent',
+      seedLength: 0,
+      sourceTurn: 3,
+      turnEndSeq: 7,
+    }
+    test.anchors.list = vi.fn().mockResolvedValue([
+      { anchor: snapshotAnchor, childSessionId: 'snapshot-child' },
+    ])
+    vi.mocked(test.anchors.get).mockResolvedValue(snapshotAnchor)
+    test.sessions.binding.mockReturnValue({
+      session: { getSnapshot: () => ({ turnEnds: new Map([[3, 10]]) }) },
+    })
+
+    await expect(test.controller.open(input('parent', 10))).resolves.toBe(
+      'snapshot-child',
+    )
+
+    expect(test.forks.open).toHaveBeenCalledWith({
+      ...input('parent', 10),
+      existingChildId: 'snapshot-child',
+    })
+    expect(test.controller.getSnapshot()).toMatchObject({
+      childAfterSeq: 0,
+      childId: 'snapshot-child',
+      mode: 'snapshot',
+      sourceTurn: 3,
+    })
   })
 })
