@@ -6,7 +6,7 @@ export interface SidecarHistoryEvent {
   type: string
   seq: number
   data?: unknown
-  sourceEventSeqs?: readonly number[]
+  sourceEventSeqs?: unknown
   surfaceOp?: unknown
 }
 

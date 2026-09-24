@@ -3,10 +3,10 @@ import type { RpcResult } from '@deepseek-ai/dsh-client-connection/client'
 import { z } from 'zod'
 
 import type { SidecarAnchor, SidecarAnchorRecord } from '../domain/types.js'
-import { SIDECAR_RPC_CHANNEL } from '../domain/rpc.js'
+import { SIDECAR_RPC_PATH } from '../domain/rpc.js'
 import { sidecarAnchorSchema } from './anchor-domain.js'
 
-export { SIDECAR_RPC_CHANNEL }
+export { SIDECAR_RPC_PATH }
 
 export interface SidecarAnchorTable {
   get(key: string): SidecarAnchor | undefined
@@ -72,5 +72,43 @@ export function createAnchorRpcHandler(table: SidecarAnchorTable): ConnectionRpc
       return { ok: true, value: null }
     }
     return invalidRequest()
+  }
+}
+
+function rpcRequest(value: unknown):
+  | { endpoint: string; payload: unknown }
+  | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  if (
+    typeof record.endpoint !== 'string' ||
+    record.endpoint.length === 0 ||
+    !Object.hasOwn(record, 'payload')
+  ) return undefined
+  return { endpoint: record.endpoint, payload: record.payload }
+}
+
+/** Exact authenticated Fetch route used by Harness 0.1.5 plugin extensions. */
+export function createAnchorFetchHandler(
+  table: SidecarAnchorTable,
+): (request: Request) => Promise<Response> {
+  const handle = createAnchorRpcHandler(table)
+  return async (request) => {
+    let parsed: { endpoint: string; payload: unknown } | undefined
+    try {
+      parsed = rpcRequest(await request.json())
+    } catch {
+      parsed = undefined
+    }
+    if (parsed === undefined) {
+      return Response.json(invalidRequest(), {
+        headers: { 'cache-control': 'no-store' },
+        status: 400,
+      })
+    }
+    return Response.json(
+      await handle(parsed.endpoint, parsed.payload, request.signal),
+      { headers: { 'cache-control': 'no-store' } },
+    )
   }
 }

@@ -1,7 +1,10 @@
-import type { ClientConnectionRpc } from '@deepseek-ai/dsh-client-connection/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { PersistentAnchorRepository } from '../src/client/controllers/persistent-anchor-repository.js'
+import {
+  BrowserAnchorRpc,
+  PersistentAnchorRepository,
+  type SidecarAnchorRpc,
+} from '../src/client/controllers/persistent-anchor-repository.js'
 
 const anchor = {
   parentSessionId: 'parent',
@@ -15,11 +18,11 @@ describe('PersistentAnchorRepository', () => {
   it('reads only an explicitly recorded sidecar anchor', async () => {
     const rpc = {
       call: vi.fn().mockResolvedValue({ ok: true, value: anchor }),
-    } as unknown as ClientConnectionRpc
+    } as unknown as SidecarAnchorRpc
     const repository = new PersistentAnchorRepository(rpc)
 
     await expect(repository.get('child')).resolves.toEqual(anchor)
-    expect(rpc.call).toHaveBeenCalledWith('/dsh-sidecar', 'anchors/get', {
+    expect(rpc.call).toHaveBeenCalledWith('anchors/get', {
       childSessionId: 'child',
     })
   })
@@ -27,7 +30,7 @@ describe('PersistentAnchorRepository', () => {
   it('does not invent an anchor for an ordinary fork', async () => {
     const rpc = {
       call: vi.fn().mockResolvedValue({ ok: true, value: null }),
-    } as unknown as ClientConnectionRpc
+    } as unknown as SidecarAnchorRpc
     const repository = new PersistentAnchorRepository(rpc)
 
     await expect(repository.get('ordinary-fork')).resolves.toBeUndefined()
@@ -44,13 +47,13 @@ describe('PersistentAnchorRepository', () => {
         ok: true,
         value: [{ anchor: snapshotAnchor, childSessionId: 'snapshot-child' }],
       }),
-    } as unknown as ClientConnectionRpc
+    } as unknown as SidecarAnchorRpc
     const repository = new PersistentAnchorRepository(rpc)
 
     await expect(repository.list('parent')).resolves.toEqual([
       { anchor: snapshotAnchor, childSessionId: 'snapshot-child' },
     ])
-    expect(rpc.call).toHaveBeenCalledWith('/dsh-sidecar', 'anchors/list', {
+    expect(rpc.call).toHaveBeenCalledWith('anchors/list', {
       parentSessionId: 'parent',
     })
   })
@@ -58,17 +61,17 @@ describe('PersistentAnchorRepository', () => {
   it('persists and removes sidecar identity through the host channel', async () => {
     const rpc = {
       call: vi.fn().mockResolvedValue({ ok: true, value: null }),
-    } as unknown as ClientConnectionRpc
+    } as unknown as SidecarAnchorRpc
     const repository = new PersistentAnchorRepository(rpc)
 
     await repository.put('child', anchor)
     await repository.remove('child')
 
-    expect(rpc.call).toHaveBeenNthCalledWith(1, '/dsh-sidecar', 'anchors/put', {
+    expect(rpc.call).toHaveBeenNthCalledWith(1, 'anchors/put', {
       anchor,
       childSessionId: 'child',
     })
-    expect(rpc.call).toHaveBeenNthCalledWith(2, '/dsh-sidecar', 'anchors/remove', {
+    expect(rpc.call).toHaveBeenNthCalledWith(2, 'anchors/remove', {
       childSessionId: 'child',
     })
   })
@@ -79,7 +82,7 @@ describe('PersistentAnchorRepository', () => {
         error: { code: 'internal', details: {}, message: 'storage unavailable' },
         ok: false,
       }),
-    } as unknown as ClientConnectionRpc
+    } as unknown as SidecarAnchorRpc
     const repository = new PersistentAnchorRepository(rpc)
 
     await expect(repository.get('child')).rejects.toThrow(
@@ -93,12 +96,32 @@ describe('PersistentAnchorRepository', () => {
         error: { code: 'internal', details: {}, message: 'channel unavailable' },
         ok: false,
       }),
-    } as unknown as ClientConnectionRpc
+    } as unknown as SidecarAnchorRpc
     const repository = new PersistentAnchorRepository(rpc)
 
     await expect(repository.put('child', anchor)).resolves.toBeUndefined()
     await expect(repository.get('child')).resolves.toEqual(anchor)
     await expect(repository.remove('child')).resolves.toBeUndefined()
     await expect(repository.get('child')).rejects.toThrow('channel unavailable')
+  })
+
+  it('calls the authenticated exact Fetch route', async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      Response.json({ ok: true, value: anchor }),
+    )
+    const rpc = new BrowserAnchorRpc(fetcher)
+
+    await expect(rpc.call('anchors/get', { childSessionId: 'child' })).resolves.toEqual({
+      ok: true,
+      value: anchor,
+    })
+    expect(fetcher).toHaveBeenCalledWith('/api/dsh-sidecar', {
+      body: JSON.stringify({
+        endpoint: 'anchors/get',
+        payload: { childSessionId: 'child' },
+      }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
   })
 })

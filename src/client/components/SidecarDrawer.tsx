@@ -1,5 +1,12 @@
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+import type {
+  SessionListState,
+} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {
+  SessionPendingInteractionSnapshot,
+} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
   InjectFace,
   PropsLocale,
@@ -74,6 +81,7 @@ export function SidecarDrawer({
   history,
   openSession,
   t,
+  useSessionPendingInteraction,
   useSessions,
 }: SidecarDrawerProps) {
   const state = useSyncExternalStore(
@@ -81,13 +89,18 @@ export function SidecarDrawer({
     controller.getSnapshot,
     controller.getSnapshot,
   )
-  const sessions = useSessions((snapshot) => snapshot)
+  const sessions = useSessions((snapshot: SessionListState) => snapshot)
   const child =
     state.childId === undefined
       ? undefined
       : sessions.byId[state.childId as SessionId]
   const running = child?.running ?? false
-  const pendingInteraction = child?.pendingInteraction
+  const pendingInteraction = useSessionPendingInteraction(
+    (snapshot: SessionPendingInteractionSnapshot) =>
+    state.childId === undefined
+      ? undefined
+      : snapshot.get(state.childId as SessionId),
+  )
   const [confirmingArchive, setConfirmingArchive] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameTitle, setRenameTitle] = useState('')
@@ -360,7 +373,7 @@ export function SidecarDrawer({
       state.childId !== undefined &&
       pendingInteraction !== undefined ? (
         <div className={styles.pending} role="status">
-          <p>{pendingInteractionText(pendingInteraction, t)}</p>
+          <p>{pendingInteractionText(pendingInteraction.kind, t)}</p>
           <button
             onClick={() => {
               void controller.close()
@@ -393,7 +406,7 @@ export function SidecarDrawer({
 }
 
 function pendingInteractionText(
-  kind: 'approval' | 'plan-review' | 'question',
+  kind: string,
   t: SidecarTranslate,
 ): string {
   if (kind === 'approval') return t('pending.approval')

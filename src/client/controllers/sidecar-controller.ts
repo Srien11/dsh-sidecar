@@ -1,7 +1,7 @@
 import type {
   ISessions,
-  IWorkspaces,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { IWorkspaces } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 
 import { followUpSummary, sidecarAnchor } from '../../domain/anchor.js'
@@ -63,8 +63,8 @@ export interface SidecarUiController {
   subscribe(listener: () => void): () => void
   open(input: OpenSidecarUiInput): Promise<string | undefined>
   close(): Promise<void>
-  branchCount(parentId: string, turnEndSeq: number): Promise<number>
-  branches(parentId: string, turnEndSeq: number): Promise<readonly SidecarBranchInfo[]>
+  branchCount(parentId: string, turnEndSeq: number, sourceTurn?: number): Promise<number>
+  branches(parentId: string, turnEndSeq: number, sourceTurn?: number): Promise<readonly SidecarBranchInfo[]>
   prompt(text: string): Promise<void>
   archiveCurrentBranch(): Promise<void>
   createBranch(): Promise<string>
@@ -126,15 +126,20 @@ export class SidecarController implements SidecarUiController {
     return () => this.listeners.delete(listener)
   }
 
-  async branchCount(parentId: string, turnEndSeq: number): Promise<number> {
-    return (await this.branches(parentId, turnEndSeq)).length
+  async branchCount(
+    parentId: string,
+    turnEndSeq: number,
+    sourceTurn?: number,
+  ): Promise<number> {
+    return (await this.branches(parentId, turnEndSeq, sourceTurn)).length
   }
 
   async branches(
     parentId: string,
     turnEndSeq: number,
+    sourceTurn?: number,
   ): Promise<readonly SidecarBranchInfo[]> {
-    return this.findBranches(parentId, turnEndSeq)
+    return this.findBranches(parentId, turnEndSeq, sourceTurn)
   }
 
   async prompt(text: string): Promise<void> {
@@ -242,7 +247,11 @@ export class SidecarController implements SidecarUiController {
       const children =
         input.fresh === true
           ? []
-          : await this.findBranches(input.parentId, input.turnEndSeq)
+          : await this.findBranches(
+              input.parentId,
+              input.turnEndSeq,
+              input.sourceTurn,
+            )
       if (
         input.branchId !== undefined &&
         !children.some((branch) => branch.childId === input.branchId)
@@ -540,12 +549,13 @@ export class SidecarController implements SidecarUiController {
   private async findBranches(
     parentId: string,
     turnEndSeq: number,
+    sourceTurn?: number,
   ): Promise<SidecarBranchInfo[]> {
     const list = this.sessions.list.getSnapshot()
-    const archived = new Set(
+    const archived = new Set<SessionId>(
       this.workspaces.list.getSnapshot().archivedSessionIds,
     )
-    const forkCandidates = list.ids.filter((id) => {
+    const forkCandidates = list.ids.filter((id: SessionId) => {
       const summary = list.byId[id]
       return (
         summary?.parentId === parentId &&
@@ -553,7 +563,7 @@ export class SidecarController implements SidecarUiController {
       )
     })
     const derived = await Promise.all(
-      forkCandidates.map(async (childId) => ({
+      forkCandidates.map(async (childId: SessionId) => ({
         anchor: await this.anchors.get(childId),
         childId,
       })),
@@ -571,18 +581,13 @@ export class SidecarController implements SidecarUiController {
         childId: record.childSessionId,
       })
     }
-    const parentSnapshot =
-      typeof this.sessions.binding === 'function'
-        ? this.sessions.binding(parentId as SessionId)?.session.getSnapshot()
-        : undefined
     const anchors = [...byChildId.values()]
 
     const matches = anchors.filter(
       (entry) =>
         entry.anchor?.parentSessionId === parentId &&
         (entry.anchor.mode === 'snapshot'
-          ? entry.anchor.sourceTurn !== undefined &&
-            parentSnapshot?.turnEnds.get(entry.anchor.sourceTurn) === turnEndSeq
+          ? sourceTurn !== undefined && entry.anchor.sourceTurn === sourceTurn
           : entry.anchor.turnEndSeq === turnEndSeq) &&
         (!archived.has(entry.childId as SessionId) || entry.anchor.hidden === true),
     )

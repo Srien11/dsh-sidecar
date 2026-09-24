@@ -1,4 +1,8 @@
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
   InjectFace,
   PropsLocale,
@@ -25,16 +29,19 @@ export type StreamingSidecarActionProps =
 
 export function StreamingSidecarAction({
   controller,
-  session,
   sessionId,
   t,
+  useChat,
+  useSession,
 }: StreamingSidecarActionProps) {
+  const chat = useChat((snapshot: ChatSnapshot) => snapshot)
+  const running = useSession((snapshot: SessionSnapshot) => snapshot.running)
   const state = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
     controller.getSnapshot,
   )
-  if (!canSnapshotFollowUp(session)) return null
+  if (!canSnapshotFollowUp(chat, running)) return null
 
   const busy =
     state.status === 'opening' &&
@@ -47,7 +54,7 @@ export function StreamingSidecarAction({
       className={`${styles.action} ${styles.streamingAction}`}
       disabled={busy}
       onClick={(event) => {
-        const anchor = snapshotFollowUpAnchor(session)
+        const anchor = snapshotFollowUpAnchor(chat, running)
         if (anchor === undefined) return
         controller.rememberReturnFocus(event.currentTarget)
         void controller

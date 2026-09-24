@@ -609,13 +609,9 @@ describe('SidecarController branch identity', () => {
       { anchor: snapshotAnchor, childSessionId: 'snapshot-child' },
     ])
     vi.mocked(test.anchors.get).mockResolvedValue(snapshotAnchor)
-    test.sessions.binding.mockReturnValue({
-      session: { getSnapshot: () => ({ turnEnds: new Map([[3, 10]]) }) },
-    })
-
-    await expect(test.controller.open(input('parent', 10))).resolves.toBe(
-      'snapshot-child',
-    )
+    await expect(
+      test.controller.open({ ...input('parent', 10), sourceTurn: 3 }),
+    ).resolves.toBe('snapshot-child')
 
     expect(test.forks.open).toHaveBeenCalledWith({
       ...input('parent', 10),

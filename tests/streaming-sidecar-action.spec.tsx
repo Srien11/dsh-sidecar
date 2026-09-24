@@ -55,19 +55,20 @@ function props(ui: SidecarUiController): StreamingSidecarActionProps {
   const dictionary = SIDECAR_LOCALES.zh as Record<string, string>
   return {
     controller: ui,
-    input: {},
-    session: {
-      chat: {
-        nodes: { get: (key: string) => nodes.get(key) },
-        order: ['user', 'assistant'],
-      },
-      nodes: [],
-      partial: null,
-      running: true,
-      turnEnds: new Map(),
-    },
     sessionId: 'parent',
     t: (key: string) => dictionary[key] ?? key,
+    useChat: (selector: (value: unknown) => unknown) =>
+      selector({
+        legacy: {
+          nodes: [],
+          partial: null,
+          turnEnds: new Map(),
+        },
+        nodes: { get: (key: string) => nodes.get(key) },
+        order: ['user', 'assistant'],
+      }),
+    useSession: (selector: (value: unknown) => unknown) =>
+      selector({ running: true }),
   } as unknown as StreamingSidecarActionProps
 }
 

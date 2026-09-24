@@ -1,6 +1,6 @@
-import type { ClientConnectionRpc } from '@deepseek-ai/dsh-client-connection/client'
+import type { RpcResult } from '@deepseek-ai/dsh-client-connection/client'
 
-import { SIDECAR_RPC_CHANNEL } from '../../domain/rpc.js'
+import { SIDECAR_RPC_PATH } from '../../domain/rpc.js'
 import type { SidecarAnchor, SidecarAnchorRecord } from '../../domain/types.js'
 import type { AnchorRepository } from '../../host/anchor-repository.js'
 
@@ -11,6 +11,46 @@ interface LocalAnchorStorage {
   getItem(key: string): string | null
   removeItem(key: string): void
   setItem(key: string, value: string): void
+}
+
+export interface SidecarAnchorRpc {
+  call(endpoint: string, payload: unknown): Promise<RpcResult<unknown>>
+}
+
+function isRpcResult(value: unknown): value is RpcResult<unknown> {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  if (record.ok === true) return Object.hasOwn(record, 'value')
+  if (record.ok !== false || typeof record.error !== 'object' || record.error === null) {
+    return false
+  }
+  const error = record.error as Record<string, unknown>
+  return (
+    typeof error.code === 'string' &&
+    typeof error.message === 'string' &&
+    typeof error.details === 'object' &&
+    error.details !== null
+  )
+}
+
+/** Browser client for the authenticated exact Fetch route registered by Host. */
+export class BrowserAnchorRpc implements SidecarAnchorRpc {
+  constructor(
+    private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+  ) {}
+
+  async call(endpoint: string, payload: unknown): Promise<RpcResult<unknown>> {
+    const response = await this.fetcher(SIDECAR_RPC_PATH, {
+      body: JSON.stringify({ endpoint, payload }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const result: unknown = await response.json()
+    if (!isRpcResult(result)) {
+      throw new Error('Sidecar anchor endpoint returned an invalid response')
+    }
+    return result
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -49,7 +89,7 @@ function defaultLocalStorage(): LocalAnchorStorage | undefined {
 
 export class PersistentAnchorRepository implements AnchorRepository {
   constructor(
-    private readonly rpc: ClientConnectionRpc,
+    private readonly rpc: SidecarAnchorRpc,
     private readonly local: LocalAnchorStorage | undefined = defaultLocalStorage(),
   ) {}
 
@@ -209,7 +249,7 @@ export class PersistentAnchorRepository implements AnchorRepository {
     endpoint: string,
     payload: unknown,
   ): Promise<unknown> {
-    const result = await this.rpc.call(SIDECAR_RPC_CHANNEL, endpoint, payload)
+    const result = await this.rpc.call(endpoint, payload)
     if (!result.ok) {
       throw new Error(`${operation} failed: ${result.error.code}: ${result.error.message}`)
     }

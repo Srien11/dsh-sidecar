@@ -1,4 +1,4 @@
-import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -6,7 +6,7 @@ import {
   snapshotFollowUpAnchor,
 } from '../src/client/controllers/frozen-history.js'
 
-function snapshot(runningText = '正在生成的结论'): ConversationSnapshot {
+function snapshot(runningText = '正在生成的结论'): ChatSnapshot {
   const nodes = new Map<string, unknown>([
     [
       'user-1',
@@ -36,20 +36,19 @@ function snapshot(runningText = '正在生成的结论'): ConversationSnapshot {
     ],
   ])
   return {
-    chat: {
-      nodes: { get: (key: string) => nodes.get(key) },
-      order: ['user-1', 'assistant-1'],
+    legacy: {
+      nodes: [],
+      partial: null,
+      turnEnds: new Map(),
     },
-    nodes: [],
-    partial: null,
-    running: true,
-    turnEnds: new Map(),
-  } as unknown as ConversationSnapshot
+    nodes: { get: (key: string) => nodes.get(key) },
+    order: ['user-1', 'assistant-1'],
+  } as unknown as ChatSnapshot
 }
 
 describe('frozen streaming history', () => {
   it('captures only visible user and assistant prose at the current open turn', () => {
-    const anchor = snapshotFollowUpAnchor(snapshot())
+    const anchor = snapshotFollowUpAnchor(snapshot(), true)
 
     expect(anchor).toEqual({
       frozenHistory: expect.stringContaining('用户：原始问题'),
@@ -61,8 +60,11 @@ describe('frozen streaming history', () => {
   })
 
   it('keeps the captured string unchanged when the main answer later grows', () => {
-    const frozen = snapshotFollowUpAnchor(snapshot('第一段'))
-    const later = snapshotFollowUpAnchor(snapshot('第一段和后来新增的第二段'))
+    const frozen = snapshotFollowUpAnchor(snapshot('第一段'), true)
+    const later = snapshotFollowUpAnchor(
+      snapshot('第一段和后来新增的第二段'),
+      true,
+    )
 
     expect(frozen?.frozenHistory).toContain('第一段')
     expect(frozen?.frozenHistory).not.toContain('后来新增')
@@ -70,8 +72,7 @@ describe('frozen streaming history', () => {
   })
 
   it('does not offer a snapshot follow-up after the parent stops running', () => {
-    const settled = { ...snapshot(), running: false }
-    expect(snapshotFollowUpAnchor(settled)).toBeUndefined()
+    expect(snapshotFollowUpAnchor(snapshot(), false)).toBeUndefined()
   })
 
   it('places the follow-up after the immutable history envelope', () => {

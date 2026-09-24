@@ -1,6 +1,12 @@
 import type { MessageId } from '@deepseek-ai/dsh-client-connection/client'
-import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type {
+  AssistantChatData,
+  ChatSnapshot,
+} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {
   InjectFace,
   PropsLocale,
@@ -37,6 +43,7 @@ export type SidecarActionProps = PropsRuntime<'conversation.chat.assistant-actio
 
 interface AnswerBoundary {
   seedLength: number
+  sourceTurn: number
   turnEndSeq: number
 }
 
@@ -76,23 +83,27 @@ function floatingPosition(rect: DOMRect): Pick<FloatingSelection, 'left' | 'top'
 }
 
 function answerBoundary(
-  snapshot: ConversationSnapshot,
+  snapshot: ChatSnapshot,
   messageId: MessageId,
 ): AnswerBoundary | undefined {
-  const node = snapshot.nodes.find(
-    (candidate) =>
-      candidate.kind === 'assistant' && candidate.messageId === messageId,
-  )
-  if (node?.kind !== 'assistant' || node.messageId === undefined) return undefined
+  const node = snapshot.order
+    .map((key) => snapshot.nodes.get(key))
+    .find((candidate) => {
+      if (candidate?.kind !== 'assistant-step') return false
+      const data = candidate.data as AssistantChatData
+      return data.finalNode?.messageId === messageId
+    })
+  if (node?.kind !== 'assistant-step') return undefined
+  const data = node.data as AssistantChatData
 
-  const turnEndSeq = snapshot.turnEnds.get(node.turn)
+  const turnEndSeq = snapshot.legacy.turnEnds.get(data.turn)
   return turnEndSeq === undefined
     ? undefined
-    : { seedLength: turnEndSeq + 1, turnEndSeq }
+    : { seedLength: turnEndSeq + 1, sourceTurn: data.turn, turnEndSeq }
 }
 
 /**
- * Public slot contract in Harness 0.1.0-rc.6:
+ * Public slot contract in Harness 0.1.5-rc.3:
  * `conversation.chat.assistant-actions` is a session-scoped list slot whose
  * owner supplies `messageId`; standard props add `sessionId`, `useSession`,
  * and `useSessions`. Only finalized Assistant messages reach this site.
@@ -102,13 +113,19 @@ export function SidecarAction({
   messageId,
   sessionId,
   t,
-  useSession,
+  useChat,
   useSessions,
   useWorkspaces,
 }: SidecarActionProps) {
-  const boundary = useSession((snapshot) => answerBoundary(snapshot, messageId))
-  const sessionVersion = useSessions((snapshot) => snapshot.ids.join('\u001f'))
-  const archiveVersion = useWorkspaces((snapshot) =>
+  const boundary = useChat((snapshot: ChatSnapshot) =>
+    answerBoundary(snapshot, messageId),
+  )
+  const sessionVersion = useSessions((snapshot: { ids: readonly string[] }) =>
+    snapshot.ids.join('\u001f'),
+  )
+  const archiveVersion = useWorkspaces((snapshot: {
+    archivedSessionIds: readonly string[]
+  }) =>
     snapshot.archivedSessionIds.join('\u001f'),
   )
   const state = useSyncExternalStore(
@@ -132,7 +149,7 @@ export function SidecarAction({
     if (boundary === undefined) return () => undefined
 
     void controller
-      .branches(sessionId, boundary.turnEndSeq)
+      .branches(sessionId, boundary.turnEndSeq, boundary.sourceTurn)
       .then((next) => {
         if (live) setBranches(next)
       })
@@ -234,6 +251,7 @@ export function SidecarAction({
           : { excerptOffset: request.excerptOffset }),
         parentId: sessionId,
         seedLength: boundary.seedLength,
+        sourceTurn: boundary.sourceTurn,
         turnEndSeq: boundary.turnEndSeq,
       })
       .catch(() => undefined)

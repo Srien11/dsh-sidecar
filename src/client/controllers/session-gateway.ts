@@ -1,14 +1,14 @@
-import type {
-  IApiClient,
-  RpcError,
-  SessionId,
-  WorkspaceId,
-} from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+import type { ClientRemote, RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   ISessions,
-  IWorkspaces,
   SessionFace,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {
+  IWorkspaces,
+  WorkspaceId,
+} from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
 export interface SidecarSessionGateway {
   createIndependent(parentSessionId: string): Promise<{ childId: string }>
@@ -20,7 +20,7 @@ export interface SidecarSessionGateway {
   rename(childId: string, title: string): Promise<void>
 }
 
-function rpcError(operation: string, error: RpcError): Error {
+function rpcError(operation: string, error: RemoteFailure): Error {
   return new Error(`${operation} failed: ${error.code}: ${error.message}`)
 }
 
@@ -37,7 +37,10 @@ function record(value: unknown): Record<string, unknown> | undefined {
  */
 function publishedForkChildId(error: unknown): string | undefined {
   const rpc = record(record(error)?.rpcError)
-  if (rpc?.code !== 'workspace-attach-failed') return undefined
+  if (
+    rpc?.code !== 'workspace-attach-failed' &&
+    rpc?.code !== 'session/workspace-attach-failed'
+  ) return undefined
   const sessionId = record(rpc.details)?.sessionId
   return typeof sessionId === 'string' && sessionId.length > 0
     ? sessionId
@@ -54,7 +57,8 @@ function wait(milliseconds: number): Promise<void> {
 export class HarnessSessionGateway implements SidecarSessionGateway {
   constructor(
     private readonly sessions: ISessions,
-    private readonly api: IApiClient,
+    private readonly remote: ClientRemote,
+    private readonly uiWorkspace: UiWorkspace,
     private readonly workspaces?: IWorkspaces,
   ) {}
 
@@ -68,7 +72,7 @@ export class HarnessSessionGateway implements SidecarSessionGateway {
     if (workspace === undefined) {
       throw new Error(`Parent session has no workspace: ${parentSessionId}`)
     }
-    const childId = await this.workspaces.connectWorkspace(
+    const childId = await this.uiWorkspace.connectWorkspace(
       workspace.workspaceId as WorkspaceId,
     )
     if (childId === parentSessionId) {
@@ -95,15 +99,33 @@ export class HarnessSessionGateway implements SidecarSessionGateway {
   async openChildSurface(childId: string): Promise<void> {
     // Addressability probe only. It deliberately does not call sessions.open().
     // A just-created fork may take a short moment to become history-readable.
-    let failure: RpcError | undefined
+    let failure: RemoteFailure | undefined
     for (const delay of ADDRESSABILITY_RETRY_DELAYS_MS) {
       if (delay > 0) await wait(delay)
-      const response = await this.api.sessions.history({
-        maxMessages: 1,
-        sessionId: childId as SessionId,
-      })
-      if (response.result.ok) return
-      failure = response.result.error
+      const abort = new AbortController()
+      try {
+        for await (const frame of this.remote.session.follow(
+          {
+            address: { kind: 'session', sessionId: childId as SessionId },
+            maxMessages: 1,
+          },
+          abort.signal,
+        )) {
+          if (frame.type === 'snapshot') return
+        }
+      } catch (error) {
+        const remote = record(error)
+        if (
+          typeof remote?.code === 'string' &&
+          typeof remote.message === 'string'
+        ) {
+          failure = remote as unknown as RemoteFailure
+        } else {
+          throw error
+        }
+      } finally {
+        abort.abort()
+      }
     }
     if (failure !== undefined) throw rpcError('Opening sidecar', failure)
   }

@@ -31,7 +31,7 @@ function props(
         /\{(\w+)\}/g,
         (_, name: string) => String(params?.[name] ?? `{${name}}`),
       ),
-    useSession: (selector: (value: unknown) => unknown) => selector(snapshot),
+    useChat: (selector: (value: unknown) => unknown) => selector(snapshot),
     useSessions: (selector: (value: unknown) => unknown) =>
       selector({ ids: ['parent'], byId: {}, current: 'parent' }),
     useWorkspaces: (selector: (value: unknown) => unknown) =>
@@ -57,11 +57,20 @@ function controller(state: Partial<SidecarControllerState> = {}): SidecarUiContr
 }
 
 const completedSnapshot = {
-  nodes: [
-    { kind: 'assistant', messageId: 'answer-1', seq: 8, turn: 2 },
-    { kind: 'steering', messageId: 'steer-1', seq: 9 },
-  ],
-  turnEnds: new Map([[2, 10]]),
+  legacy: { nodes: [], partial: null, turnEnds: new Map([[2, 10]]) },
+  nodes: {
+    get: (key: string) =>
+      key === 'answer'
+        ? {
+            data: {
+              finalNode: { messageId: 'answer-1' },
+              turn: 2,
+            },
+            kind: 'assistant-step',
+          }
+        : undefined,
+  },
+  order: ['answer'],
 }
 
 /** Answer row immediately owned by a turn-tail action, without stray text nodes. */
@@ -81,7 +90,10 @@ function answerWithTail(answer: string, ui: SidecarUiController) {
 
 describe('SidecarAction', () => {
   it('does not render for an open turn or a non-assistant message', () => {
-    const openTurn = { ...completedSnapshot, turnEnds: new Map() }
+    const openTurn = {
+      ...completedSnapshot,
+      legacy: { ...completedSnapshot.legacy, turnEnds: new Map() },
+    }
     const ui = controller()
     const { rerender } = render(<SidecarAction {...props(openTurn, ui)} />)
 
@@ -103,6 +115,7 @@ describe('SidecarAction', () => {
       fresh: true,
       parentId: 'parent',
       seedLength: 11,
+      sourceTurn: 2,
       turnEndSeq: 10,
     })
   })
@@ -134,6 +147,7 @@ describe('SidecarAction', () => {
       fresh: true,
       parentId: 'parent',
       seedLength: 11,
+      sourceTurn: 2,
       turnEndSeq: 10,
     })
   })
@@ -173,6 +187,7 @@ describe('SidecarAction', () => {
       fresh: true,
       parentId: 'parent',
       seedLength: 11,
+      sourceTurn: 2,
       turnEndSeq: 10,
     })
   })
@@ -252,6 +267,7 @@ describe('SidecarAction', () => {
       branchId: 'child-b',
       parentId: 'parent',
       seedLength: 11,
+      sourceTurn: 2,
       turnEndSeq: 10,
     })
   })
@@ -363,6 +379,7 @@ describe('SidecarAction in-answer highlights', () => {
       branchId: 'child-a',
       parentId: 'parent',
       seedLength: 11,
+      sourceTurn: 2,
       turnEndSeq: 10,
     })
   })

@@ -20,7 +20,7 @@ The answer-tail control now lists every follow-up by summary (the question that 
 
 `Select an answer excerpt → Click “Ask follow-up” beside it → Continue in the floating window → Close and resume later from the highlight or the tail summary`
 
-> Status: `0.1.0-beta.0`, targeting `@deepseek-ai/dsh@0.1.0-rc.6`. The core flow has been verified in a real Harness installation and browser smoke test. The current automated regression suite contains 163 tests and passes type checking, build, and bundle-contract verification. Harness is still in preview, so future release candidates may introduce breaking changes.
+> Status: `0.1.0-beta.0`, targeting `@deepseek-ai/dsh@0.1.5-rc.3`. The core flow has been verified in a real Harness installation and HTTP smoke test. The current automated regression suite contains 165 tests and passes type checking, build, and bundle-contract verification. Harness is still in preview, so future release candidates may introduce breaking changes.
 
 ## Features
 
@@ -44,7 +44,7 @@ The answer-tail control now lists every follow-up by summary (the question that 
 
 ## Installation
 
-The beta is not published to npm yet. A source installation requires Node.js `^22.19.0 || >=24.0.0`, pnpm `11.7.0`, and DeepSeek Harness `0.1.0-rc.6`:
+The beta is not published to npm yet. A source installation requires Node.js `^22.19.0 || >=24.0.0`, pnpm `11.7.0`, and DeepSeek Harness `0.1.5-rc.3`:
 
 ```powershell
 git clone https://github.com/Srien11/dsh-sidecar.git
@@ -79,19 +79,19 @@ Tool side effects are not isolated. Parent and child Sessions may share the same
 
 ## How it works
 
-The plugin uses only public Harness `0.1.0-rc.6` interfaces:
+The plugin uses only public Harness `0.1.5-rc.3` interfaces:
 
 - `sessions.fork` creates persistent children;
-- `workspaces.connectWorkspace` creates an independent same-workspace child for running answers;
-- `sessions.history` projects child history;
+- `uiWorkspace.connectWorkspace` creates an independent same-workspace child for running answers;
+- `remote.session.follow` and `remote.session.page` project child history and the active response stream;
 - `SessionFace.prompt`, `cancel`, and `rename` drive the child;
 - `workspaces.archiveSession` hides children from regular conversation groups;
-- `storageDomain` and the plugin RPC channel persist branch anchors, including the first-question summary plus the selected excerpt and its character offset;
+- `storageDomain` and a Harness-authenticated Fetch route persist branch anchors, including the first-question summary plus the selected excerpt and its character offset;
 - `conversation.chat.assistant-actions` injects the answer actions, the tail summary list, and the in-answer highlight entries;
 - `conversation.input.right` injects the running-answer action;
 - `shell.overlay` hosts the draggable floating window.
 
-The current Client Runtime can stage only one native Session surface at a time. The window therefore uses a lightweight history projection instead of mounting a second native Conversation surface or changing `sessions.current`. The main conversation receives the native live event window; the side child is limited to public history reads and provides near-real-time incremental output through 250ms active polling.
+The window uses a lightweight history projection instead of mounting a second native Conversation surface or changing the active main Session. The side child reads history through the public Session snapshot and pagination interfaces, then refreshes the active turn every 250ms for near-real-time incremental output.
 
 ## Development verification
 
@@ -103,7 +103,7 @@ pnpm check:bundle
 pnpm pack --dry-run
 ```
 
-The 163 tests cover anchor storage/RPC, sidecar identity and archival boundaries, atomic forks, streaming-history freezing, immediate exact selections and selection offsets, in-answer highlights and entries (repeated wording, cross-block skipping, cleanup restoration), follow-up summary lists and label fallbacks, floating-window geometry (drag, resize, keyboard, clamping, persistence), independent follow-up recovery, active-turn refresh, focus, bilingual dictionaries, theme contracts, and child transcript projection.
+The 165 tests cover anchor storage/transport, sidecar identity and archival boundaries, atomic forks, streaming-history freezing, immediate exact selections and selection offsets, in-answer highlights and entries (repeated wording, cross-block skipping, cleanup restoration), follow-up summary lists and label fallbacks, floating-window geometry (drag, resize, keyboard, clamping, persistence), independent follow-up recovery, active-turn refresh, focus, bilingual dictionaries, theme contracts, and child transcript projection.
 
 These commands reuse the existing `node_modules`. A complete Harness installation and browser smoke test are separate release checks, not routine local regression steps.
 

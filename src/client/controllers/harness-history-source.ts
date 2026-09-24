@@ -1,8 +1,10 @@
+import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
-  IApiClient,
-  SessionId,
-} from '@deepseek-ai/dsh-client-connection/client'
-import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client'
+  SessionAssistantStreamAttempt,
+  SessionFollowFrame,
+} from '@deepseek-ai/dsh-api-session-controller/types'
 
 import type {
   DerivedAnchorSource,
@@ -19,7 +21,7 @@ export class HarnessHistorySource
 {
   constructor(
     private readonly sessions: ISessions,
-    private readonly api: IApiClient,
+    private readonly remote: ClientRemote,
   ) {}
 
   async parentId(childSessionId: string): Promise<string | undefined> {
@@ -28,23 +30,33 @@ export class HarnessHistorySource
 
   async history(sessionId: string): Promise<readonly SidecarHistoryEvent[]> {
     const events = new Map<number, SidecarHistoryEvent>()
-    let beforeSeq: number | undefined
+    const opening = await this.openingSnapshot(sessionId)
+    for (const record of opening.records) events.set(record.event.seq, record.event)
+    const activeAttempt = opening.assistantStream?.activeAttempt
+    if (activeAttempt !== undefined) {
+      for (const event of streamingEvents(opening.cursor, activeAttempt)) {
+        events.set(event.seq, event)
+      }
+    }
+    let beforeSeq = opening.records[0]?.event.seq
 
-    for (let page = 0; page < 100; page += 1) {
-      const response = await this.api.sessions.history({
-        ...(beforeSeq === undefined ? {} : { beforeSeq }),
+    for (let page = 0; opening.hasMore && page < 100; page += 1) {
+      if (beforeSeq === undefined) break
+      const response = await this.remote.session.page({
+        address: { kind: 'session', sessionId: sessionId as SessionId },
+        beforeSeq,
         maxMessages: 200,
-        sessionId: sessionId as SessionId,
+        throughSeq: opening.cursor,
       })
-      if (!response.result.ok) {
+      if (!response.ok) {
         throw new Error(
-          `Reading sidecar history failed: ${response.result.error.code}: ${response.result.error.message}`,
+          `Reading sidecar history failed: ${response.error.code}: ${response.error.message}`,
         )
       }
 
-      const pageEvents = response.result.value.events.map(({ event }) => event)
+      const pageEvents = response.value.records.map(({ event }) => event)
       for (const event of pageEvents) events.set(event.seq, event)
-      if (!response.result.value.hasMore || pageEvents.length === 0) break
+      if (!response.value.hasMore || pageEvents.length === 0) break
 
       const oldest = Math.min(...pageEvents.map((event) => event.seq))
       if (beforeSeq !== undefined && oldest >= beforeSeq) {
@@ -55,4 +67,36 @@ export class HarnessHistorySource
 
     return [...events.values()].sort((left, right) => left.seq - right.seq)
   }
+
+  private async openingSnapshot(
+    sessionId: string,
+  ): Promise<Extract<SessionFollowFrame, { type: 'snapshot' }>> {
+    const abort = new AbortController()
+    try {
+      for await (const frame of this.remote.session.follow(
+        {
+          address: { kind: 'session', sessionId: sessionId as SessionId },
+          assistantStream: true,
+          maxMessages: 200,
+        },
+        abort.signal,
+      )) {
+        if (frame.type === 'snapshot') return frame
+      }
+      throw new Error(`Session history stream closed before snapshot: ${sessionId}`)
+    } finally {
+      abort.abort()
+    }
+  }
+}
+
+function streamingEvents(
+  cursor: number,
+  attempt: SessionAssistantStreamAttempt,
+): SidecarHistoryEvent[] {
+  return attempt.stream.map((chunk, index) => ({
+    data: { chunk, step: attempt.step, turn: attempt.turn },
+    seq: cursor + (index + 1) / (attempt.stream.length + 1),
+    type: 'assistant/chunk',
+  }))
 }

@@ -1,4 +1,4 @@
-import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 
 export interface FrozenFollowUpAnchor {
   frozenHistory: string
@@ -46,10 +46,10 @@ function assistantText(blocks: unknown): string {
     .trim()
 }
 
-function chatEntries(snapshot: ConversationSnapshot): FrozenEntry[] {
+function chatEntries(snapshot: ChatSnapshot): FrozenEntry[] {
   const entries: FrozenEntry[] = []
-  for (const key of snapshot.chat.order) {
-    const node = snapshot.chat.nodes.get(key)
+  for (const key of snapshot.order) {
+    const node = snapshot.nodes.get(key)
     if (node === undefined || node.visibility !== 'visible') continue
     const data = record(node.data)
     if (node.kind === 'user' || node.kind === 'steering') {
@@ -72,9 +72,9 @@ function chatEntries(snapshot: ConversationSnapshot): FrozenEntry[] {
   return entries
 }
 
-function legacyEntries(snapshot: ConversationSnapshot): FrozenEntry[] {
+function legacyEntries(snapshot: ChatSnapshot): FrozenEntry[] {
   const entries: FrozenEntry[] = []
-  for (const node of snapshot.nodes) {
+  for (const node of snapshot.legacy.nodes) {
     if (node.kind === 'user' || node.kind === 'steering') {
       const text = userText(node.content)
       if (text !== '') entries.push({ anchorSeq: node.seq, role: 'user', text })
@@ -91,15 +91,15 @@ function legacyEntries(snapshot: ConversationSnapshot): FrozenEntry[] {
       })
     }
   }
-  if (snapshot.partial !== null) {
-    const text = assistantText(snapshot.partial.blocks)
+  if (snapshot.legacy.partial !== null) {
+    const text = assistantText(snapshot.legacy.partial.blocks)
     if (text !== '') {
       entries.push({
         anchorSeq: Math.max(0, ...entries.map((entry) => entry.anchorSeq)) + 1,
         role: 'assistant',
         running: true,
         text,
-        turn: snapshot.partial.turn,
+        turn: snapshot.legacy.partial.turn,
       })
     }
   }
@@ -120,12 +120,15 @@ function frozenTranscript(entries: readonly FrozenEntry[]): string {
 }
 
 /** Cheap render-time predicate; the full transcript is serialized only on click. */
-export function canSnapshotFollowUp(snapshot: ConversationSnapshot): boolean {
-  if (!snapshot.running) return false
-  for (let index = snapshot.chat.order.length - 1; index >= 0; index -= 1) {
-    const key = snapshot.chat.order[index]
+export function canSnapshotFollowUp(
+  snapshot: ChatSnapshot,
+  running: boolean,
+): boolean {
+  if (!running) return false
+  for (let index = snapshot.order.length - 1; index >= 0; index -= 1) {
+    const key = snapshot.order[index]
     if (key === undefined) continue
-    const node = snapshot.chat.nodes.get(key)
+    const node = snapshot.nodes.get(key)
     if (
       node === undefined ||
       node.visibility !== 'visible' ||
@@ -137,20 +140,24 @@ export function canSnapshotFollowUp(snapshot: ConversationSnapshot): boolean {
     const turn = data?.turn
     if (
       typeof turn === 'number' &&
-      !snapshot.turnEnds.has(turn) &&
+      !snapshot.legacy.turnEnds.has(turn) &&
       assistantText(data?.blocks) !== ''
     ) {
       return true
     }
   }
-  return snapshot.partial !== null && assistantText(snapshot.partial.blocks) !== ''
+  return (
+    snapshot.legacy.partial !== null &&
+    assistantText(snapshot.legacy.partial.blocks) !== ''
+  )
 }
 
 /** Freeze only visible user/assistant prose from the currently open Turn. */
 export function snapshotFollowUpAnchor(
-  snapshot: ConversationSnapshot,
+  snapshot: ChatSnapshot,
+  running: boolean,
 ): FrozenFollowUpAnchor | undefined {
-  if (!canSnapshotFollowUp(snapshot)) return undefined
+  if (!canSnapshotFollowUp(snapshot, running)) return undefined
   const chat = chatEntries(snapshot)
   const entries = chat.length > 0 ? chat : legacyEntries(snapshot)
   const source = [...entries]
@@ -159,7 +166,7 @@ export function snapshotFollowUpAnchor(
       (entry) =>
         entry.role === 'assistant' &&
         entry.turn !== undefined &&
-        !snapshot.turnEnds.has(entry.turn),
+        !snapshot.legacy.turnEnds.has(entry.turn),
     )
   if (source?.turn === undefined) return undefined
   return {

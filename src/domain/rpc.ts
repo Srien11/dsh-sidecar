@@ -1,1 +1,1 @@
-export const SIDECAR_RPC_CHANNEL = '/dsh-sidecar'
+export const SIDECAR_RPC_PATH = '/api/dsh-sidecar'

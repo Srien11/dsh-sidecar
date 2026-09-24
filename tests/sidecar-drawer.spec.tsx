@@ -94,6 +94,9 @@ function props(
         /\{(\w+)\}/g,
         (_, name: string) => String(params?.[name] ?? `{${name}}`),
       ),
+    useSessionPendingInteraction: (
+      selector: (snapshot: Map<string, { kind: string }>) => unknown,
+    ) => selector(new Map([['child', { kind: pendingInteraction }]])),
     useSessions: (selector: (snapshot: unknown) => unknown) =>
       selector({
         byId: {

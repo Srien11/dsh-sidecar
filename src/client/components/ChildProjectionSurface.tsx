@@ -219,6 +219,13 @@ export function ChildProjectionSurface({
               {message.role === 'assistant' ? (
                 <div className={styles.markdown}>
                   <MarkdownText
+                    labels={{
+                      code: {
+                        copiedLabel: t('markdown.copied'),
+                        copyLabel: t('markdown.copy'),
+                      },
+                      footnotes: t('markdown.footnotes'),
+                    }}
                     streaming={message.pending === true}
                     text={message.text}
                   />

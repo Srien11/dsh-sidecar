@@ -20,7 +20,7 @@
 
 `选中回答片段 → 点击选区旁“追问” → 在浮动窗口里继续对话 → 关闭后可随时从原文高亮或段尾摘要恢复`
 
-> 当前状态：`0.1.0-beta.0`，面向 `@deepseek-ai/dsh@0.1.0-rc.6`。核心运行路径曾通过真实安装与浏览器冒烟；当前自动化回归包含 163 项测试，并通过类型检查、构建和 Bundle（产物包）契约验证。Harness 仍处于预览期，后续 RC 可能带来破坏性变化。
+> 当前状态：`0.1.0-beta.0`，面向 `@deepseek-ai/dsh@0.1.5-rc.3`。核心运行路径已通过真实安装与 HTTP 冒烟；当前自动化回归包含 165 项测试，并通过类型检查、构建和 Bundle（产物包）契约验证。Harness 仍处于预览期，后续 RC 可能带来破坏性变化。
 
 ## 已实现
 
@@ -44,7 +44,7 @@
 
 ## 安装
 
-当前 Beta 尚未发布到 npm。源码安装需要 Node.js `^22.19.0 || >=24.0.0`、pnpm `11.7.0` 和 DeepSeek Harness `0.1.0-rc.6`：
+当前 Beta 尚未发布到 npm。源码安装需要 Node.js `^22.19.0 || >=24.0.0`、pnpm `11.7.0` 和 DeepSeek Harness `0.1.5-rc.3`：
 
 ```powershell
 git clone https://github.com/Srien11/dsh-sidecar.git
@@ -79,19 +79,19 @@ dsh plugin --profile web add dsh-sidecar
 
 ## 实现方式
 
-插件只使用 Harness `0.1.0-rc.6` 的公开接口：
+插件只使用 Harness `0.1.5-rc.3` 的公开接口：
 
 - `sessions.fork` 创建持久 child；
-- `workspaces.connectWorkspace` 为未完成回答创建同工作区的独立空白 child；
-- `sessions.history` 投影 child 历史；
+- `uiWorkspace.connectWorkspace` 为未完成回答创建同工作区的独立空白 child；
+- `remote.session.follow` 和 `remote.session.page` 投影 child 历史与活动回答流；
 - `SessionFace.prompt`、`cancel` 和 `rename` 驱动 child；
 - `workspaces.archiveSession` 将 child 从普通会话分组中隐藏；
-- `storageDomain` 和插件 RPC 通道持久化、读取分支锚点（含首个问题摘要、选中片段及其字符偏移）；
+- `storageDomain` 和经过 Harness 认证的 Fetch 路由持久化、读取分支锚点（含首个问题摘要、选中片段及其字符偏移）；
 - `conversation.chat.assistant-actions` 注入回答操作、段尾摘要列表与段内高亮入口；
 - `conversation.input.right` 注入流式回答期间的即时追问入口；
 - `shell.overlay` 承载可拖动的浮动窗口。
 
-当前 Client Runtime 一次只能 stage 一个原生 Session surface，因此窗口内使用轻量历史投影，不挂载第二个原生 Conversation surface，也不切换 `sessions.current`。主对话使用原生实时事件窗口；侧边 child 受公开接口限制，通过活动回合 250ms 轮询提供近实时增量输出。
+窗口内使用轻量历史投影，不挂载第二个原生 Conversation surface，也不切换当前主会话。侧边 child 通过公开的 Session 快照与分页接口读取历史，并以 250ms 频率刷新活动回合，提供近实时增量输出。
 
 ## 开发验证
 
@@ -103,7 +103,7 @@ pnpm check:bundle
 pnpm pack --dry-run
 ```
 
-当前 163 项测试覆盖锚点存储/RPC、sidecar 身份与归档边界、fork 原子性、流式历史冻结、即时精确选区与选区字符偏移、段落内高亮与点击入口（含重复文字定位、跨段落跳过、清理还原）、追问摘要列表与回退标签、浮动窗口几何（拖动/缩放/键盘/越界收敛/持久化）、独立追问恢复、活动回合刷新、焦点、双语词典、主题契约和 child transcript 投影。
+当前 165 项测试覆盖锚点存储/传输、sidecar 身份与归档边界、fork 原子性、流式历史冻结、即时精确选区与选区字符偏移、段落内高亮与点击入口（含重复文字定位、跨段落跳过、清理还原）、追问摘要列表与回退标签、浮动窗口几何（拖动/缩放/键盘/越界收敛/持久化）、独立追问恢复、活动回合刷新、焦点、双语词典、主题契约和 child transcript 投影。
 
 上述命令只复用现有 `node_modules`。完整 Harness 安装与浏览器冒烟属于发布前的独立验收，不作为日常本地回归步骤。
 
